@@ -118,6 +118,46 @@ function parallelPlaneSpacings(planes){
   }
   const ded=[];for(const x of out.sort((a,b)=>b.confidence-a.confidence)){if(!ded.some(y=>y.componentId===x.componentId&&Math.abs(y.spacing-x.spacing)<Math.max(.15,x.spacing*.006)))ded.push(x)}return ded.slice(0,80);
 }
+
+function markVerifiedGeometry(rec,planes,cylinders,holePatterns,planeSpacings){
+  const diag=Math.hypot(...(rec?.bounds?.size||[1,1,1]))||1;
+  const planeTol=Math.max(.010,diag*.000006);
+  let vp=0,vc=0,vh=0,vpat=0,vps=0;
+  for(const f of planes||[]){
+    f.verified=!!(f.confidence>=.965&&Number.isFinite(f.rms)&&f.rms<=planeTol);
+    f.verification=f.verified?{method:'analytic-plane-fit',rms:f.rms,tolerance:planeTol}:null;
+    if(f.verified)vp++;
+  }
+  for(const f of cylinders||[]){
+    const tol=Math.max(.015,(f.radius||0)*.00045,diag*.000006);
+    const alignment=Math.abs(f.normalAlignment||0);
+    f.verified=!!(f.full&&f.confidence>=.94&&Number.isFinite(f.rms)&&f.rms<=tol&&(f.coverageRad||0)>=5.35&&alignment>=.72);
+    f.verification=f.verified?{method:'analytic-cylinder-fit',rms:f.rms,tolerance:tol,coverageRad:f.coverageRad,normalAlignment:f.normalAlignment}:null;
+    if(f.verified){vc++;if(f.type==='hole')vh++;}
+  }
+  for(const g of holePatterns||[]){
+    const members=g.members||[];
+    const diameters=members.map(x=>x.diameter).filter(Number.isFinite);
+    const spread=diameters.length?Math.max(...diameters)-Math.min(...diameters):Infinity;
+    const pcdTol=g.pcd?Math.max(.04,g.pcd*.00045):Infinity;
+    g.verified=!!(g.confidence>=.92&&spread<=Math.max(.025,(g.diameter||0)*.0008)&&(!g.pcd||(Number.isFinite(g.rms)&&g.rms<=pcdTol)));
+    g.verification=g.verified?{method:g.pcd?'analytic-pattern-pcd-fit':'analytic-repeated-hole-fit',diameterSpread:spread,pcdRms:g.rms,pcdTolerance:g.pcd?pcdTol:null}:null;
+    if(g.verified)vpat++;
+  }
+  for(const x of planeSpacings||[]){
+    x.verified=!!(x.confidence>=.945&&x.areaRatio>=.55);
+    if(x.verified)vps++;
+  }
+  const total=Math.max(1,(planes?.length||0)+(cylinders?.length||0));
+  const verified=vp+vc;
+  return{
+    mode:'ANALYTIC_VERIFIED',nativeBRep:false,source:'FaceTessellations analytical fitting',
+    counts:{planes:vp,cylinders:vc,holes:vh,holePatterns:vpat,planeSpacings:vps,totalVerified:verified,totalCandidates:total},
+    ratio:verified/total,
+    note:'VERIFIED означает подтверждённую аналитическую аппроксимацию по FaceTessellations с жёсткими допусками fit/residual. Это не нативный Parasolid B-Rep.'
+  };
+}
+
 function clusterAxes(cyls){const groups=[];for(const c of cyls){let g=groups.find(x=>angleDeg(x.axis,c.axis)<2.5);if(!g){g={axis:c.axis,members:[],weight:0};groups.push(g)}g.members.push(c);g.weight+=Math.max(1,c.area);let s=[0,0,0];for(const m of g.members){let a=m.axis;if(dot(a,g.axis)<0)a=mul(a,-1);s=add(s,mul(a,Math.max(1,m.area)))}g.axis=canonicalAxis(s)}return groups.sort((a,b)=>b.weight-a.weight).map((g,i)=>({id:`AX-${i+1}`,axis:g.axis,count:g.members.length,weight:g.weight,diameters:[...new Set(g.members.map(x=>Math.round(x.diameter*1000)/1000))].sort((a,b)=>b-a)}))}
 export function recognizeTessellationGeometry(rec,{maxFeatures=500}={}){
   const faces=rec?.faces||[],groups=faceGroups(faces),diag=Math.hypot(...(rec?.bounds?.size||[1,1,1]))||1,planes=[],rawCyl=[];
@@ -125,19 +165,20 @@ export function recognizeTessellationGeometry(rec,{maxFeatures=500}={}){
   const cylinders=dedupeCylinders(rawCyl).slice(0,maxFeatures),holes=cylinders.filter(x=>x.type==='hole'),outerCylinders=cylinders.filter(x=>x.type==='outer'),axes=clusterAxes(cylinders),holePatterns=groupHolePatterns(holes),coaxialGroups=clusterCoaxialCylinders(cylinders),planeSpacings=parallelPlaneSpacings(planes),components=new Map();
   for(const p of planes){const id=p.componentId||'RAW',g=components.get(id)||{componentId:id,name:p.instance?.name||id,planes:0,cylinders:0,holes:0,outerCylinders:0};g.planes++;components.set(id,g)}
   for(const c of cylinders){const id=c.componentId||'RAW',g=components.get(id)||{componentId:id,name:c.instance?.name||id,planes:0,cylinders:0,holes:0,outerCylinders:0};g.cylinders++;if(c.type==='hole')g.holes++;if(c.type==='outer')g.outerCylinders++;components.set(id,g)}
+  const verification=markVerifiedGeometry(rec,planes,cylinders,holePatterns,planeSpacings);
   const all=[...planes,...cylinders],featureConfidence=all.length?all.reduce((s,x)=>s+x.confidence,0)/all.length:0;
-  return{version:'1.1.0',source:'FaceTessellations',heuristic:true,facesAnalyzed:groups.length,trianglesAnalyzed:faces.length,planes,cylinders,holes,outerCylinders,axes,holePatterns,coaxialGroups,planeSpacings,components:[...components.values()],counts:{faceGroups:groups.length,planes:planes.length,cylinders:cylinders.length,holes:holes.length,outerCylinders:outerCylinders.length,axes:axes.length,holePatterns:holePatterns.length,coaxialGroups:coaxialGroups.length,planeSpacings:planeSpacings.length},confidence:featureConfidence,dominantAxis:axes[0]?.axis||null,note:'Precision Drawing Core v1.1.0: геометрия распознана эвристически из тесселяции; дополнительно выделяются повторяющиеся отверстия/PCD, соосные ступени и параллельные плоскости. Размеры требуют VERIFY до точного B-Rep.'};
+  return{version:'1.2.0',source:'FaceTessellations',heuristic:true,facesAnalyzed:groups.length,trianglesAnalyzed:faces.length,planes,cylinders,holes,outerCylinders,axes,holePatterns,coaxialGroups,planeSpacings,components:[...components.values()],verification,counts:{faceGroups:groups.length,planes:planes.length,cylinders:cylinders.length,holes:holes.length,outerCylinders:outerCylinders.length,axes:axes.length,holePatterns:holePatterns.length,coaxialGroups:coaxialGroups.length,planeSpacings:planeSpacings.length,verifiedPlanes:verification.counts.planes,verifiedCylinders:verification.counts.cylinders,verifiedHoles:verification.counts.holes,verifiedPatterns:verification.counts.holePatterns,verifiedPlaneSpacings:verification.counts.planeSpacings},confidence:featureConfidence,dominantAxis:axes[0]?.axis||null,note:'Verified Geometry Core v1.2.0: аналитические плоскости/цилиндры/отверстия подтверждаются по RMS, покрытию и согласованности нормалей. VERIFIED — не нативный Parasolid B-Rep.'};
 }
 export function recognitionDimensions(rec,recognition,{limit=24}={}){
   const out=[],seen=new Set();
   const push=(x,key)=>{if(!Number.isFinite(x?.value))return;if(seen.has(key))return;seen.add(key);out.push(x)};
   const b=rec?.bounds?.size||[];for(let i=0;i<3;i++)if(Number.isFinite(b[i]))push({type:'Габарит',label:['X','Y','Z'][i],value:b[i],unit:'mm',confidence:.96,source:'TESS_BOUNDS'},`B:${i}:${Math.round(b[i]*100)/100}`);
   for(const p of recognition?.holePatterns||[]){
-    push({type:p.pcd?'Группа отверстий · PCD':'Группа отверстий',label:`${p.count}×Ø`,value:p.diameter,unit:'mm',confidence:p.confidence,source:'TESS_HOLE_PATTERN',count:p.count,pcd:p.pcd,componentId:p.componentId},`HP:${p.componentId}:${p.count}:${p.diameter.toFixed(2)}:${p.pcd?Math.round(p.pcd*10):0}`);
-    if(p.pcd)push({type:'Делительная окружность',label:'PCD Ø',value:p.pcd,unit:'mm',confidence:Math.max(.7,p.confidence-.03),source:'TESS_PCD',count:p.count,componentId:p.componentId},`PCD:${p.componentId}:${Math.round(p.pcd*10)}`);
+    push({type:p.pcd?'Группа отверстий · PCD':'Группа отверстий',label:`${p.count}×Ø`,value:p.diameter,unit:'mm',confidence:p.confidence,source:p.verified?'VERIFIED_HOLE_PATTERN':'TESS_HOLE_PATTERN',count:p.count,pcd:p.pcd,componentId:p.componentId},`HP:${p.componentId}:${p.count}:${p.diameter.toFixed(2)}:${p.pcd?Math.round(p.pcd*10):0}`);
+    if(p.pcd)push({type:'Делительная окружность',label:'PCD Ø',value:p.pcd,unit:'mm',confidence:Math.max(.7,p.confidence-.03),source:p.verified?'VERIFIED_PCD':'TESS_PCD',count:p.count,componentId:p.componentId},`PCD:${p.componentId}:${Math.round(p.pcd*10)}`);
   }
   const cyl=[...(recognition?.cylinders||[])].filter(c=>c.full&&c.confidence>.72).sort((a,b)=>b.area-a.area||b.diameter-a.diameter);
-  for(const c of cyl){const dk=Math.round(c.diameter*100)/100,lk=Math.round(c.length*100)/100;push({type:c.type==='hole'?'Отверстие':'Цилиндр',label:'Ø',value:c.diameter,unit:'mm',confidence:c.confidence,source:'TESS_CYLINDER',componentId:c.componentId,feature:c},`D:${c.componentId}:${c.type}:${dk}`);if(c.length>1)push({type:'Длина цилиндра',label:'L',value:c.length,unit:'mm',confidence:Math.max(.65,c.confidence-.05),source:'TESS_CYLINDER_LENGTH',componentId:c.componentId,feature:c},`L:${c.componentId}:${lk}`);if(out.length>=limit)break}
-  if(out.length<limit){for(const s of recognition?.planeSpacings||[]){if(s.spacing<1||s.spacing>5000)continue;push({type:'Расстояние плоскостей',label:'L',value:s.spacing,unit:'mm',confidence:s.confidence,source:'TESS_PLANE_SPACING',componentId:s.componentId},`PS:${s.componentId}:${Math.round(s.spacing*10)}`);if(out.length>=limit)break}}
+  for(const c of cyl){const dk=Math.round(c.diameter*100)/100,lk=Math.round(c.length*100)/100;push({type:c.type==='hole'?'Отверстие':'Цилиндр',label:'Ø',value:c.diameter,unit:'mm',confidence:c.confidence,source:c.verified?'VERIFIED_CYLINDER':'TESS_CYLINDER',componentId:c.componentId,feature:c},`D:${c.componentId}:${c.type}:${dk}`);if(c.length>1)push({type:'Длина цилиндра',label:'L',value:c.length,unit:'mm',confidence:Math.max(.65,c.confidence-.05),source:c.verified?'VERIFIED_CYLINDER_LENGTH':'TESS_CYLINDER_LENGTH',componentId:c.componentId,feature:c},`L:${c.componentId}:${lk}`);if(out.length>=limit)break}
+  if(out.length<limit){for(const s of recognition?.planeSpacings||[]){if(s.spacing<1||s.spacing>5000)continue;push({type:'Расстояние плоскостей',label:'L',value:s.spacing,unit:'mm',confidence:s.confidence,source:s.verified?'VERIFIED_PLANE_SPACING':'TESS_PLANE_SPACING',componentId:s.componentId},`PS:${s.componentId}:${Math.round(s.spacing*10)}`);if(out.length>=limit)break}}
   return out.slice(0,limit);
 }

@@ -120,3 +120,11 @@ html[data-theme="dark"] .drawing-workspace{background:linear-gradient(145deg,#10
 
 /* v0.8.0 · TESS recognition */
 .feature strong{font-size:10px}.dim-card small{display:block;margin-top:3px}.recognition .feature:nth-child(3){background:color-mix(in srgb,var(--green) 5%,var(--panel))}.recognition .feature:nth-child(3) strong{color:var(--green)}
+
+/* v1.2.0 · Verified Geometry + drawing auto-fit */
+.dim-card span{display:block;color:var(--text);font-size:11px;line-height:1.25;margin-bottom:3px}
+.dim-card b{display:block;font:700 14px/1.25 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--text-strong);white-space:normal}
+.verified-feature{background:color-mix(in srgb,var(--green) 7%,var(--panel))!important}.verified-feature strong{color:var(--green)!important}
+.drawing-workspace.active-view{display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:8px}
+.drawing-workspace svg.fit-sheet{height:calc(100% - 4px);width:auto;max-width:none;min-width:0;flex:none;background:#fff;box-shadow:0 10px 28px rgba(29,42,61,.14)}
+@media(max-width:760px){.drawing-workspace.active-view{display:block}.drawing-workspace svg.fit-sheet{width:760px;height:auto;min-width:760px}}

@@ -79,6 +79,9 @@ self.onmessage=async e=>{
       rec.counts.cylinders=rec.recognition.counts.cylinders;
       rec.counts.holes=rec.recognition.counts.holes;
       rec.counts.recognizedAxes=rec.recognition.counts.axes;
+      rec.counts.verifiedPlanes=rec.recognition.counts.verifiedPlanes||0;
+      rec.counts.verifiedCylinders=rec.recognition.counts.verifiedCylinders||0;
+      rec.counts.verifiedHoles=rec.recognition.counts.verifiedHoles||0;
     }
     stage='dimensions';
     let dimensions=rec.geometryAvailable?recognitionDimensions(rec,rec.recognition,{limit:36}):[];

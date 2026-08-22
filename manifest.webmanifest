@@ -5,7 +5,7 @@
   "display": "standalone",
   "background_color": "#f5f7fa",
   "theme_color": "#ffffff",
-  "description": "Offline SLDASM CAD: native 3D assembly, precision tessellation recognition, repeated-hole/PCD and coaxial-step detection, adaptive AXIAL/GENERAL assembly drawings, selected-part drawings, sections, dimensions, BOM and title block. No AI/API or server CAD.",
+  "description": "Offline SLDASM CAD: native 3D assembly, verified analytical tessellation geometry, repeated-hole/PCD and coaxial-step detection, verified analytical dimensions, adaptive AXIAL/GENERAL assembly drawings, selected-part drawings, sections, dimensions, BOM and title block. No AI/API or server CAD.",
   "icons": [
     {
       "src": "icons/icon-192.png",

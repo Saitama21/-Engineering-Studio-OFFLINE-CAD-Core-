@@ -3,6 +3,12 @@ const MODERN_MARKER=new Uint8Array([0x14,0x00,0x06,0x00,0x08,0x00]);
 const FACE_PATTERN=new Uint8Array([0x64,0,0,0,0x02,0,0,0]);
 const MAX_NAME=512,MAX_COMPRESSED=64*1024*1024;
 
+function appendAll(dst,src){
+  if(!src?.length)return dst;
+  for(let i=0;i<src.length;i++)dst.push(src[i]);
+  return dst;
+}
+
 function asBytes(input){
   if(input instanceof Uint8Array)return input;
   if(input instanceof ArrayBuffer)return new Uint8Array(input);
@@ -142,7 +148,7 @@ function parseFaceTessellationStream(data,streamName,scale=1000){
       }
       cursor+=n;
     }
-    const bounds=computeBounds(pts);allPoints.push(...pts);
+    const bounds=computeBounds(pts);appendAll(allPoints,pts);
     const meta={id:faceIndex,offset:off,edgeCount,vertexCount:vc,stripCount:stripCounts.length,triangleCount:triCount,stream:streamName,bounds:{min:bounds.min,max:bounds.max}};
     faceBlocks.push(meta);blocks.push({...meta,bounds,triangles:blockTriangles});search=Math.max(search,b2End);
   }
@@ -190,7 +196,7 @@ function mapTessellationToModels(blocks,modelDefinitions){
       union=unionBounds(union,block.bounds);bi++;
     }
     if(bi===start)continue;
-    const selected=blocks.slice(start,bi),tris=selected.flatMap(b=>b.triangles);
+    const selected=blocks.slice(start,bi),tris=[];for(const block of selected)appendAll(tris,block.triangles);
     templates.set(model.id,{model,blocks:selected,triangles:tris,bounds:union});
     assignments.push({modelId:model.id,name:model.name,stream,blockStart:start,blockEnd:bi-1,blocks:selected.length,triangles:tris.length,bboxError:bboxNormError(union,model.bboxMm)});
   }
@@ -206,7 +212,7 @@ function placeModelTemplates(mapping,occurrences){
     for(const tri of tpl.triangles){
       const loop=(tri.loops?.[0]||[]).map(p=>transformPointMm(p,occ.transform));if(loop.length<3)continue;
       const normals=(tri.normals||[]).map(n=>transformNormal(n,occ.transform));
-      points.push(...loop);
+      appendAll(points,loop);
       faces.push({...tri,loops:[loop],normals,componentId:occ.id,modelId:occ.modelRef,instance:{id:occ.id,name:occ.name,fileName:occ.fileName,modelRef:occ.modelRef,parent:occ.parent}});
     }
   }
@@ -227,7 +233,7 @@ export async function parseSLDASM(input,fileName='assembly.SLDASM'){
     streamNames=modern.streamInfo.map(x=>x.name);
     const comp=modern.streams.get('swXmlContents/COMPINSTANCETREE');if(comp)tree=parseComponentTreeXml(textUtf8(comp),fileName);
     const tessNames=[...modern.streams.keys()].filter(n=>/^FaceTessellations\/\d+-\d+-\d+$/i.test(n)).sort();
-    for(const name of tessNames){const r=parseFaceTessellationStream(modern.streams.get(name),name,1000);rawTriangles.push(...r.triangles);rawPoints.push(...r.points);faceBlocks.push(...r.faceBlocks);allBlocks.push(...r.blocks)}
+    for(const name of tessNames){const r=parseFaceTessellationStream(modern.streams.get(name),name,1000);appendAll(rawTriangles,r.triangles);appendAll(rawPoints,r.points);appendAll(faceBlocks,r.faceBlocks);appendAll(allBlocks,r.blocks)}
   }
   let components=tree?.components||[],occurrences=tree?.occurrences||[],products=tree?.products||[],root=tree?.root||stemName(fileName);
   if(!components.length){components=legacyReferences(bytes,fileName).map((x,i)=>({...x,index:i+1}));occurrences=[];for(let i=0;i<components.length;i++)for(let j=0;j<components[i].count;j++)occurrences.push({id:`SW-${i+1}-${j+1}`,name:components[i].name,child:components[i].file,parent:'SW-ROOT',type:components[i].type,source:'SLDASM_LEGACY_SCAN'});products=[{id:'SW-ROOT',name:root,type:'assembly'},...components.map((c,i)=>({id:`SW-P-${i+1}`,name:c.name,file:c.file,type:c.type}))]}
@@ -243,7 +249,7 @@ export async function parseSLDASM(input,fileName='assembly.SLDASM'){
   const parseMs=(typeof performance!=='undefined'?performance.now():Date.now())-t0;
   const unmappedModels=(mapping.leafModels||[]).filter(m=>!mapping.templates.has(m.id)).map(m=>({id:m.id,name:m.name,file:m.fileName}));
   return{
-    format:'SLDASM',adapter:'sldasm-native-production-drawing-v1.0.1',geometryAvailable,isAssembly:true,unit:'mm',factor:1,bounds,counts,
+    format:'SLDASM',adapter:'sldasm-native-production-drawing-v1.0.3',geometryAvailable,isAssembly:true,unit:'mm',factor:1,bounds,counts,
     faces,edges:[],surfaces:[],radii:[],boltPatterns:[],instances:occurrences,occurrences,products,components,
     nativeAssembly:{root,file:baseName(fileName),componentCount:components.length,occurrenceCount:occurrences.length,components,container:modern?'SolidWorks 2015+ chunk container':'SolidWorks binary',signatureHex:[...bytes.slice(0,8)].map(b=>b.toString(16).padStart(2,'0')).join(' '),streamCount:streamNames.length,streamNames,swVersion:tree?.swVersion||'',geometryMode:geometryAvailable?(placed.faces.length?'FaceTessellations + assembly transforms':'FaceTessellations local fallback'):'none',tessellationStreams:modern?[...modern.streams.keys()].filter(n=>n.startsWith('FaceTessellations/')):[],faceBlocks:faceBlocks.length,sourceTriangles:rawTriangles.length,triangles:faces.length,nativeScaleToMm:1000,mappedModels:mapping.assignments.length,mappedOccurrences:placed.placedOccurrences.length,totalLeafModels:mapping.leafModels.length,unmappedModels,transformMapping:mapping.assignments,confidence:tree?'decoded-xml+transforms+tess-recognition-ready':(components.length?'legacy-scan':'format-recognized'),note:geometryAvailable?(placed.faces.length?'3D собрано локально из FaceTessellations с применением матриц каждого вхождения SLDASM. Это графическая тесселяция SolidWorks, не точный Parasolid B-Rep.':'3D показано как локальная FaceTessellations-геометрия без картирования вхождений.'):'SLDASM структура прочитана, но в файле не найдено декодируемой встроенной тесселяции.'},
     tessellation:{mode:geometryAvailable?'triangle-strips':'none',faceBlocks,sourceStreams:modern?[...modern.streams.keys()].filter(n=>/^FaceTessellations\/\d+-\d+-\d+$/i.test(n)):[],nativeUnit:'m',scaleToMm:1000,assemblyTransformsApplied:placed.faces.length>0,mappedModels:mapping.assignments.length,mappedOccurrences:placed.placedOccurrences.length},

@@ -1,6 +1,6 @@
-const CACHE='rozfood-engineering-studio-v1.0.1-stack-safe-hotfix';
+const CACHE='rozfood-engineering-studio-v1.0.3-large-assembly-transport-safe';
 const ASSETS=[
-  './','./index.html','./styles.css?v=1.0.1','./app.js?v=1.0.1','./import-worker.js',
+  './','./index.html','./styles.css?v=1.0.3','./app.js?v=1.0.3','./import-worker.js',
   './import/sldasm-adapter.js','./core/tess-recognition.js','./core/math3d.js',
   './drawing/drawing-engine.js','./drawing/tess-recognition-drawing.js','./drawing/assembly-production-sheet-v100.js',
   './viewer/wireframe-viewer.js','./manifest.webmanifest',

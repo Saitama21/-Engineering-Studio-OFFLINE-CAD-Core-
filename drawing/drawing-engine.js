@@ -1,4 +1,7 @@
 import {basis,dot,norm} from '../core/math3d.js';
+function appendAll(dst,src){if(!src?.length)return dst;for(let i=0;i<src.length;i++)dst.push(src[i]);return dst}
+function minOf(arr,f=x=>x){let m=Infinity;for(let i=0;i<arr.length;i++){const v=f(arr[i],i);if(v<m)m=v}return m}
+function maxOf(arr,f=x=>x){let m=-Infinity;for(let i=0;i<arr.length;i++){const v=f(arr[i],i);if(v>m)m=v}return m}
 
 const AXES=['X','Y','Z'];
 const PLANES={
@@ -92,7 +95,7 @@ export function renderDrawing(svg,drawing,options={}){
 
   if(mode.notes&&!mode.assembly) s+=renderNotes(drawing,{x:55,y:598,w:640,h:50},colors);
   s+=renderTitleBlock({projectName,fileName,unit:drawing.unit,mode:mode.label,rec:drawing.rec},{x:720,y:610,w:440,h:112},colors);
-  s+=`<text x="55" y="715" fill="${colors.muted}" font-family="system-ui,-apple-system,sans-serif" font-size="11">ROZFOOD ENGINEERING STUDIO · Drawing Core v1.0.1 · SLDASM FaceTessellations локально</text>`;
+  s+=`<text x="55" y="715" fill="${colors.muted}" font-family="system-ui,-apple-system,sans-serif" font-size="11">ROZFOOD ENGINEERING STUDIO · Drawing Core v1.0.3 · SLDASM FaceTessellations локально</text>`;
   svg.innerHTML=s;
 }
 
@@ -187,7 +190,7 @@ function renderFeatureCallouts(drawing,plane,P,scale,box,c){
 }
 
 function renderSectionView(section,box,c){
-  const axialSpan=Math.max(section.max-section.min,1e-6),maxR=Math.max(...section.intervals.map(x=>x.outer),1);
+  const axialSpan=Math.max(section.max-section.min,1e-6),maxR=Math.max(maxOf(section.intervals,x=>x.outer),1);
   const scale=Math.min((box.w-70)/axialSpan,(box.h-75)/(maxR*2));
   const ox=box.x+(box.w-axialSpan*scale)/2-section.min*scale,cy=box.y+box.h/2+8;
   const X=v=>ox+v*scale,Y=r=>cy-r*scale;
@@ -248,7 +251,7 @@ function renderTitleBlock(meta,box,c){
   s+=row('ЕДИНИЦЫ',meta.unit,y+33,{mono:true,size:10});
   s+=row('МАСШТАБ','AUTO',y+55,{mono:true,size:10});
   s+=row('СТАТУС','AUTO / VERIFY',y+77,{blue:true,size:9.3});
-  s+=row('ЯДРО','v1.0.1',y+99,{mono:true,size:8.8});
+  s+=row('ЯДРО','v1.0.3',y+99,{mono:true,size:8.8});
   s+='</g>';
   return s;
 }
@@ -261,12 +264,12 @@ function projectGeometry(rec,plane){
       if(e.kind==='circle'&&axisParallelToDrop(e.placement.axis,plane.drop)){
         const center=projectCenter(e.placement.origin,plane);items.push({kind:'circle',center,r:e.radius,source:e,instance:e.instance||null});points.push([center[0]-e.radius,center[1]-e.radius],[center[0]+e.radius,center[1]+e.radius]);
       }else{
-        const pts=sampleCurve3D(e,64).map(p=>projectCenter(p,plane));items.push({kind:'polyline',points:pts,source:e,instance:e.instance||null});points.push(...pts);
+        const pts=sampleCurve3D(e,64).map(p=>projectCenter(p,plane));items.push({kind:'polyline',points:pts,source:e,instance:e.instance||null});appendAll(points,pts);
       }
     }
   }
   if(!points.length){const b=rec.bounds;points.push([b.min[plane.uv[0]],b.min[plane.uv[1]]],[b.max[plane.uv[0]],b.max[plane.uv[1]]])}
-  const min=[Math.min(...points.map(p=>p[0])),Math.min(...points.map(p=>p[1]))],max=[Math.max(...points.map(p=>p[0])),Math.max(...points.map(p=>p[1]))];
+  const min=[minOf(points,p=>p[0]),minOf(points,p=>p[1])],max=[maxOf(points,p=>p[0]),maxOf(points,p=>p[1])];
   return {items,extents:{min,max}};
 }
 
@@ -297,7 +300,7 @@ function buildAxialSection(rec,axis){
   const cuts=[...new Set(segments.flatMap(s=>[s.a,s.b]))].sort((a,b)=>a-b),intervals=[];
   for(let i=0;i<cuts.length-1;i++){const a=cuts[i],b=cuts[i+1],mid=(a+b)/2,active=segments.filter(s=>mid>=s.a-tol&&mid<=s.b+tol);if(!active.length)continue;const radii=active.map(s=>s.r).sort((x,y)=>x-y);intervals.push({a,b,outer:radii[radii.length-1],inner:radii.length>1?radii[0]:0})}
   if(!intervals.length)return null;
-  return {axis,min:Math.min(...intervals.map(i=>i.a)),max:Math.max(...intervals.map(i=>i.b)),intervals};
+  return {axis,min:minOf(intervals,i=>i.a),max:maxOf(intervals,i=>i.b),intervals};
 }
 
 
@@ -392,7 +395,7 @@ export function renderNativeAssemblyDrawing(svg,nativeAssembly,options={}){
   s+=`<g font-family="system-ui"><rect x="${x}" y="${y}" width="${w}" height="${Math.min(520,70+comps.length*rh)}" fill="#fff" stroke="${c.ink}"/><text x="${x+18}" y="${y+27}" fill="${c.title}" font-size="14" font-weight="800">СПЕЦИФИКАЦИЯ · ${escapeXml(n.root||projectName)}</text><line x1="${x}" y1="${y+42}" x2="${x+w}" y2="${y+42}" stroke="${c.ink}"/><line x1="${c1}" y1="${y+42}" x2="${c1}" y2="${y+Math.min(520,70+comps.length*rh)}" stroke="${c.ink}"/><line x1="${c2}" y1="${y+42}" x2="${c2}" y2="${y+Math.min(520,70+comps.length*rh)}" stroke="${c.ink}"/>`;
   s+=`<text x="${x+30}" y="${y+62}" text-anchor="middle" fill="${c.muted}" font-size="9">ПОЗ.</text><text x="${c1+10}" y="${y+62}" fill="${c.muted}" font-size="9">КОМПОНЕНТ / ФАЙЛ</text><text x="${x+w-45}" y="${y+62}" text-anchor="middle" fill="${c.muted}" font-size="9">КОЛ.</text>`;
   let yy=y+72;comps.forEach((q,i)=>{s+=`<line x1="${x}" y1="${yy}" x2="${x+w}" y2="${yy}" stroke="${c.construction}" stroke-width=".7"/><text x="${x+30}" y="${yy+20}" text-anchor="middle" fill="${c.ink}" font-size="10" font-weight="700">${i+1}</text><text x="${c1+10}" y="${yy+14}" fill="${c.ink}" font-size="10.5" font-weight="700">${escapeXml(q.name)}</text><text x="${c1+10}" y="${yy+25}" fill="${c.muted}" font-size="8.5">${escapeXml(q.file||'')}</text><text x="${x+w-45}" y="${yy+20}" text-anchor="middle" fill="${c.ink}" font-size="10.5" font-weight="700">${q.count}</text>`;yy+=rh});s+='</g>';
-  s+=`<text x="55" y="665" fill="${c.muted}" font-family="system-ui" font-size="11">ROZFOOD ENGINEERING STUDIO · Drawing Core v1.0.1 · SLDASM Tess Recognition</text>`;
+  s+=`<text x="55" y="665" fill="${c.muted}" font-family="system-ui" font-size="11">ROZFOOD ENGINEERING STUDIO · Drawing Core v1.0.3 · SLDASM Tess Recognition</text>`;
   s+=renderTitleBlock({projectName,fileName:options.fileName||'',unit:'—',mode:'Сборочный детализированный',rec:{counts:{faces:0,edges:0}}},{x:720,y:610,w:440,h:112},c);
   svg.innerHTML=s;
 }

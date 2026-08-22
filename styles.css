@@ -158,3 +158,23 @@ html[data-theme="dark"] .drawing-workspace{background:linear-gradient(145deg,#10
   #drawingActions .mode-switch button{width:100%;min-width:0;padding-inline:5px}
   .drawing-workspace.advanced-edit-nav::after{font-size:9px;left:7px;bottom:7px;max-width:calc(100% - 14px)}
 }
+
+
+/* v1.4.1 · Advanced Edit toolbar + adaptive drawing navigation */
+.drawing-tool-palette{display:flex;align-items:center;gap:4px;padding:3px;border:1px solid color-mix(in srgb,var(--accent) 22%,var(--line));border-radius:10px;background:color-mix(in srgb,var(--accent) 5%,var(--panel-2));flex-wrap:wrap}
+.drawing-tool-palette.hidden{display:none!important}
+.drawing-tool-palette button{min-height:30px;padding:5px 8px;font-size:10.5px;white-space:nowrap}
+.drawing-tool-palette button.active{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 38%,var(--line));background:color-mix(in srgb,var(--accent) 10%,var(--panel))}
+.drawing-workspace.tool-edit{cursor:default}
+.drawing-workspace.tool-zoom{cursor:zoom-in}
+.drawing-workspace.tool-pan{cursor:grab}
+.drawing-workspace.tool-pan.drawing-panning{cursor:grabbing!important}
+.drawing-workspace.drawing-nav-interacting svg{shape-rendering:optimizeSpeed;text-rendering:optimizeSpeed}
+.drawing-workspace.drawing-nav-heavy.drawing-nav-interacting svg text{visibility:hidden}
+.drawing-workspace.drawing-nav-heavy.drawing-nav-interacting svg [stroke-dasharray]{visibility:hidden}
+.drawing-workspace.drawing-nav-interacting svg .editor-selected{filter:none!important}
+.drawing-workspace.advanced-edit-nav::after{content:'Правка · колесо — зум к курсору'}
+.drawing-workspace.advanced-edit-nav.tool-edit::after{content:'Редактировать · ЛКМ — выбрать/переместить · колесо — зум · средняя кнопка — панорама'}
+.drawing-workspace.advanced-edit-nav.tool-zoom::after{content:'Зум · клик — приблизить · Shift+клик — отдалить · колесо — плавный зум'}
+.drawing-workspace.advanced-edit-nav.tool-pan::after{content:'Панорама · тянуть ЛКМ · колесо — зум'}
+@media(max-width:760px){#drawingActions .drawing-tool-palette{width:100%;display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}.drawing-tool-palette button{width:100%;min-width:0;white-space:normal}}

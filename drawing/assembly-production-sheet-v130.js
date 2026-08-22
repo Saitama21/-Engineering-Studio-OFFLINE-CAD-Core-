@@ -166,7 +166,7 @@ function renderGeneralAssemblySheet(svg,rec,{projectName='SLDASM',fileName='',th
   if(cfg.section)s+=`<g stroke="#111" fill="#111" font-family="Arial" font-size="10"><line x1="${main.x+12}" y1="${c1[1]}" x2="${main.x+main.w-12}" y2="${c1[1]}" stroke-dasharray="12 4 2 4"/><path d="M${main.x+18} ${c1[1]}l10 -5v10zM${main.x+main.w-18} ${c1[1]}l-10 -5v10z"/><text x="${main.x+4}" y="${c1[1]-8}" stroke="none">A</text><text x="${main.x+main.w-6}" y="${c1[1]-8}" stroke="none">A</text></g>`;
   if(cfg.bom)s+=renderBOM(rec.nativeAssembly,bomBox);
   s+=renderReferenceStamp(projectName,scale,stampBox,mode==='assemblyDetailed'?'Сборочный чертёж':`${cfg.label[0]+cfg.label.slice(1).toLowerCase()} чертёж`);
-  s+=`<g font-family="Arial" fill="#111"><text x="${large?105:95}" y="${H-42}" font-size="7" fill="#555">ROZFOOD ENGINEERING STUDIO · Drawing Intelligence v1.4.0 · GENERAL · ${cfg.label} · ${large?'A1':'A2'} · ${esc(fileName)}</text><text x="${W-145}" y="${bomBox.y-12}" font-size="9" text-anchor="end">VERIFIED TESS</text></g>`;
+  s+=`<g font-family="Arial" fill="#111"><text x="${large?105:95}" y="${H-42}" font-size="7" fill="#555">ROZFOOD ENGINEERING STUDIO · Drawing Intelligence v1.4.1 · GENERAL · ${cfg.label} · ${large?'A1':'A2'} · ${esc(fileName)}</text><text x="${W-145}" y="${bomBox.y-12}" font-size="9" text-anchor="end">VERIFIED TESS</text></g>`;
   svg.innerHTML=s;
 }
 
@@ -211,7 +211,7 @@ export function renderAssemblyProductionSheet(svg,rec,{projectName='SLDASM',file
   s+=`<text x="${isoSolid.x+8}" y="${isoSolid.y+isoSolid.h+10}" font-family="Arial" font-size="9" fill="#111">Сборочный изометрический вид</text><text x="${isoExpl.x+8}" y="${isoExpl.y+isoExpl.h+10}" font-family="Arial" font-size="9" fill="#111">B–B (1:5)</text>`;
   s+=renderBOM(rec.nativeAssembly,{x:1030,y:625,w:325,h:205});
   s+=renderReferenceStamp(projectName,scale,{x:860,y:845,w:495,h:95});
-  s+=`<g font-family="Arial" fill="#111"><text x="95" y="944" font-size="7" fill="#555">ROZFOOD ENGINEERING STUDIO · Drawing Intelligence v1.4.0 · ${esc(fileName)}</text><text x="1240" y="612" font-size="9" text-anchor="end">VERIFIED TESS</text></g>`;
+  s+=`<g font-family="Arial" fill="#111"><text x="95" y="944" font-size="7" fill="#555">ROZFOOD ENGINEERING STUDIO · Drawing Intelligence v1.4.1 · ${esc(fileName)}</text><text x="1240" y="612" font-size="9" text-anchor="end">VERIFIED TESS</text></g>`;
   svg.innerHTML=s;
 }
 
@@ -240,7 +240,7 @@ function renderGeneralComponentSheet(svg,part,{componentName='Деталь',file
   const pnotes=patternNotes(part,5),cnotes=precisionNotes(part,4),notes=[...pnotes,...cnotes].slice(0,8);
   if(notes.length){s+=`<g font-family="Arial" fill="#111"><text x="830" y="790" font-size="10.5" font-weight="700">Проверяемые элементы</text>`;notes.forEach((t,i)=>s+=`<text x="830" y="${810+i*16}" font-size="8.8">${esc(t)}</text>`);s+='</g>'}
   s+=renderPartStamp(componentName,scale,{x:860,y:845,w:495,h:95});
-  s+=`<text x="95" y="944" font-family="Arial" font-size="7" fill="#555">ROZFOOD ENGINEERING STUDIO · Drawing Intelligence v1.4.0 · GENERAL PART · ${esc(fileName)}</text><text x="1240" y="815" font-family="Arial" font-size="9" text-anchor="end" fill="#111">VERIFIED TESS</text>`;
+  s+=`<text x="95" y="944" font-family="Arial" font-size="7" fill="#555">ROZFOOD ENGINEERING STUDIO · Drawing Intelligence v1.4.1 · GENERAL PART · ${esc(fileName)}</text><text x="1240" y="815" font-family="Arial" font-size="9" text-anchor="end" fill="#111">VERIFIED TESS</text>`;
   svg.innerHTML=s;
 }
 
@@ -264,6 +264,6 @@ export function renderComponentProductionSheet(svg,rec,{componentId=null,compone
   const pnotes=patternNotes(part,4);if(pnotes.length)pnotes.forEach((t,i)=>s+=`<text x="${endBox.x+8}" y="${endBox.y+22+i*17}" font-family="Arial" font-size="9.5" fill="#111">${esc(t)}</text>`);else{const holes=groupedHoles(part,axis);holes.forEach((h,i)=>s+=`<text x="${endBox.x+8}" y="${endBox.y+22+i*17}" font-family="Arial" font-size="9.5" fill="#111">${h.count} отв. Ø${fmt(h.d,2)}</text>`)}const cnotes=precisionNotes(part,3);cnotes.forEach((t,i)=>s+=`<text x="${isoBox.x+8}" y="${isoBox.y+22+i*16}" font-family="Arial" font-size="9" fill="#111">${esc(t)}</text>`);
   s+=`<g stroke="#111" fill="#111" font-family="Arial" font-size="10"><line x1="${main.x+14}" y1="${main.y+main.h/2}" x2="${main.x+main.w-14}" y2="${main.y+main.h/2}" stroke-dasharray="12 4 2 4"/><path d="M${main.x+18} ${main.y+main.h/2}l10 -5v10zM${main.x+main.w-18} ${main.y+main.h/2}l-10 -5v10z"/><text x="${main.x+4}" y="${main.y+main.h/2-8}" stroke="none">A</text><text x="${main.x+main.w-6}" y="${main.y+main.h/2-8}" stroke="none">A</text></g>`;
   s+=renderPartStamp(componentName,scale,{x:860,y:845,w:495,h:95});
-  s+=`<text x="95" y="944" font-family="Arial" font-size="7" fill="#555">ROZFOOD ENGINEERING STUDIO · Drawing Intelligence v1.4.0 · ${esc(fileName)}</text><text x="1240" y="815" font-family="Arial" font-size="9" text-anchor="end" fill="#111">VERIFIED TESS</text>`;
+  s+=`<text x="95" y="944" font-family="Arial" font-size="7" fill="#555">ROZFOOD ENGINEERING STUDIO · Drawing Intelligence v1.4.1 · ${esc(fileName)}</text><text x="1240" y="815" font-family="Arial" font-size="9" text-anchor="end" fill="#111">VERIFIED TESS</text>`;
   svg.innerHTML=s;
 }

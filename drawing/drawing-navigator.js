@@ -1,38 +1,122 @@
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const mix=(a,b,t)=>a+(b-a)*t;
+
 export class DrawingNavigator{
   constructor(workspace,svg){
-    this.workspace=workspace;this.svg=svg;this.enabled=false;this.base=null;this.view=null;this.pan=null;
+    this.workspace=workspace;this.svg=svg;this.enabled=false;this.tool='edit';
+    this.base=null;this.view=null;this.target=null;this.pan=null;
+    this.raf=0;this.lastFrame=0;this.interactionTimer=0;this.elementCount=0;
     this._bind();this.captureBase();
   }
   captureBase({reset=true}={}){
     const raw=(this.svg.getAttribute('viewBox')||'0 0 1200 760').trim().split(/\s+/).map(Number);
     if(raw.length!==4||raw.some(v=>!Number.isFinite(v)))return;
     this.base={x:raw[0],y:raw[1],w:raw[2],h:raw[3]};
+    this.elementCount=this.svg.querySelectorAll('*').length;
+    this.workspace.classList.toggle('drawing-nav-heavy',this.elementCount>1800);
+    this.workspace.dataset.drawingNodes=String(this.elementCount);
     if(reset||!this.view)this.fit();
   }
-  setEnabled(on){this.enabled=!!on;this.workspace.classList.toggle('advanced-edit-nav',this.enabled);if(!this.enabled)this.pan=null}
-  fit(){if(!this.base)this.captureBase({reset:false});if(!this.base)return;this.view={...this.base};this._apply()}
-  _apply(){if(!this.view)return;const v=this.view;this.svg.setAttribute('viewBox',`${v.x} ${v.y} ${v.w} ${v.h}`)}
-  _point(clientX,clientY){const r=this.svg.getBoundingClientRect(),v=this.view||this.base;if(!v||!r.width||!r.height)return null;return{x:v.x+(clientX-r.left)/r.width*v.w,y:v.y+(clientY-r.top)/r.height*v.h}}
+  setEnabled(on){
+    this.enabled=!!on;
+    this.workspace.classList.toggle('advanced-edit-nav',this.enabled);
+    if(!this.enabled){this.pan=null;this._endInteraction(true)}
+  }
+  setTool(tool){
+    this.tool=['edit','zoom','pan'].includes(tool)?tool:'edit';
+    this.workspace.classList.remove('tool-edit','tool-zoom','tool-pan');
+    this.workspace.classList.add(`tool-${this.tool}`);
+  }
+  fit(){
+    if(!this.base)this.captureBase({reset:false});if(!this.base)return;
+    this.view={...this.base};this.target={...this.base};
+    if(this.raf)cancelAnimationFrame(this.raf);this.raf=0;this._apply();
+  }
+  _apply(){
+    if(!this.view)return;
+    const v=this.view;this.svg.setAttribute('viewBox',`${v.x} ${v.y} ${v.w} ${v.h}`);
+  }
+  _point(clientX,clientY,view=this.target||this.view||this.base){
+    const r=this.svg.getBoundingClientRect();
+    if(!view||!r.width||!r.height)return null;
+    return{x:view.x+(clientX-r.left)/r.width*view.w,y:view.y+(clientY-r.top)/r.height*view.h};
+  }
+  _beginInteraction(){
+    this.workspace.classList.add('drawing-nav-interacting');
+    clearTimeout(this.interactionTimer);
+    this.interactionTimer=setTimeout(()=>this._endInteraction(),150);
+  }
+  _endInteraction(force=false){
+    clearTimeout(this.interactionTimer);this.interactionTimer=0;
+    if(force||!this.pan)this.workspace.classList.remove('drawing-nav-interacting');
+  }
+  _queue(){
+    if(!this.raf)this.raf=requestAnimationFrame(t=>this._frame(t));
+  }
+  _frame(ts){
+    this.raf=0;
+    if(!this.target)return;
+    const fps=this.elementCount>4500?24:this.elementCount>2200?30:60;
+    const minDt=1000/fps;
+    if(ts-this.lastFrame<minDt){this._queue();return}
+    this.lastFrame=ts;
+    const cur=this.view||this.target;
+    const alpha=this.elementCount>2200?1:.55;
+    const next={
+      x:mix(cur.x,this.target.x,alpha),y:mix(cur.y,this.target.y,alpha),
+      w:mix(cur.w,this.target.w,alpha),h:mix(cur.h,this.target.h,alpha)
+    };
+    const delta=Math.abs(next.x-this.target.x)+Math.abs(next.y-this.target.y)+Math.abs(next.w-this.target.w)+Math.abs(next.h-this.target.h);
+    this.view=delta<1e-4?{...this.target}:next;this._apply();
+    if(delta>=1e-4)this._queue();
+  }
+  _zoomAt(clientX,clientY,factor){
+    const v=this.target||this.view||this.base;if(!v||!this.base)return;
+    const p=this._point(clientX,clientY,v);if(!p)return;
+    const base=this.base,minW=base.w*.025,maxW=base.w*16;
+    const nw=clamp(v.w*factor,minW,maxW),nh=nw*(v.h/v.w);
+    const rx=(p.x-v.x)/v.w,ry=(p.y-v.y)/v.h;
+    this.target={x:p.x-rx*nw,y:p.y-ry*nh,w:nw,h:nh};
+    this._beginInteraction();this._queue();
+  }
   _bind(){
     this.workspace.addEventListener('wheel',e=>{
-      if(!this.enabled||!this.view)return;e.preventDefault();
-      const p=this._point(e.clientX,e.clientY);if(!p)return;
-      const factor=Math.exp(e.deltaY*.0012),base=this.base||this.view;
-      const minW=base.w*.035,maxW=base.w*12;
-      const nw=Math.max(minW,Math.min(maxW,this.view.w*factor)),nh=nw*(this.view.h/this.view.w);
-      const rx=(p.x-this.view.x)/this.view.w,ry=(p.y-this.view.y)/this.view.h;
-      this.view={x:p.x-rx*nw,y:p.y-ry*nh,w:nw,h:nh};this._apply();
+      if(!this.enabled||!(this.target||this.view))return;
+      e.preventDefault();
+      const dy=clamp(e.deltaY,-180,180),factor=Math.exp(dy*.0015);
+      this._zoomAt(e.clientX,e.clientY,factor);
     },{passive:false});
+
     this.workspace.addEventListener('pointerdown',e=>{
-      if(!this.enabled||e.button!==1||!this.view)return;e.preventDefault();
-      this.pan={id:e.pointerId,x:e.clientX,y:e.clientY,start:{...this.view}};this.workspace.setPointerCapture?.(e.pointerId);this.workspace.classList.add('drawing-panning');
+      if(!this.enabled)return;
+      const middle=e.button===1,leftPan=e.button===0&&this.tool==='pan';
+      if(middle||leftPan){
+        const start=this.target||this.view;if(!start)return;
+        e.preventDefault();e.stopPropagation();
+        this.pan={id:e.pointerId,x:e.clientX,y:e.clientY,start:{...start}};
+        this.workspace.setPointerCapture?.(e.pointerId);
+        this.workspace.classList.add('drawing-panning');this._beginInteraction();return;
+      }
+      if(e.button===0&&this.tool==='zoom'){
+        e.preventDefault();e.stopPropagation();
+        this._zoomAt(e.clientX,e.clientY,e.shiftKey||e.altKey?1.28:.78);
+      }
     });
+
     this.workspace.addEventListener('pointermove',e=>{
-      if(!this.pan||e.pointerId!==this.pan.id)return;const r=this.svg.getBoundingClientRect();if(!r.width||!r.height)return;
-      const dx=(e.clientX-this.pan.x)/r.width*this.pan.start.w,dy=(e.clientY-this.pan.y)/r.height*this.pan.start.h;
-      this.view={...this.pan.start,x:this.pan.start.x-dx,y:this.pan.start.y-dy};this._apply();
+      if(!this.pan||e.pointerId!==this.pan.id)return;
+      const r=this.svg.getBoundingClientRect();if(!r.width||!r.height)return;
+      const d=this.pan,dx=(e.clientX-d.x)/r.width*d.start.w,dy=(e.clientY-d.y)/r.height*d.start.h;
+      this.target={...d.start,x:d.start.x-dx,y:d.start.y-dy};
+      this._beginInteraction();this._queue();
     });
-    const end=e=>{if(!this.pan||e.pointerId!==this.pan.id)return;this.pan=null;this.workspace.classList.remove('drawing-panning')};
-    this.workspace.addEventListener('pointerup',end);this.workspace.addEventListener('pointercancel',end);
+
+    const end=e=>{
+      if(!this.pan||e.pointerId!==this.pan.id)return;
+      this.pan=null;this.workspace.classList.remove('drawing-panning');
+      this._endInteraction();
+    };
+    this.workspace.addEventListener('pointerup',end);
+    this.workspace.addEventListener('pointercancel',end);
   }
 }

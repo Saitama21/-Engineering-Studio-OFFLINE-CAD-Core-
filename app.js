@@ -5,8 +5,8 @@ import {renderAssemblyProductionSheet,renderComponentProductionSheet,assemblyDra
 import {DrawingEditor} from './drawing/drawing-editor.js';
 import {DrawingNavigator} from './drawing/drawing-navigator.js';
 
-const APP_VERSION='1.4.0';
-const BUILD_LABEL='ADVANCED EDIT + LARGE ASSEMBLY PERFORMANCE';
+const APP_VERSION='1.4.1';
+const BUILD_LABEL='ADVANCED EDIT TOOLBAR + SMOOTH DRAWING NAV';
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const viewer=new WireframeViewer($('#viewerCanvas'));
 viewer.onSelect=(id,instance)=>{
@@ -22,6 +22,8 @@ viewer.onSelect=(id,instance)=>{
 };
 const worker=new Worker('./import-worker.js',{type:'module'});
 let state={fileName:null,fileSize:0,rec:null,dimensions:[],types:[],parseMs:0,drawingMode:'production',selectedComponentId:null,selectedComponentName:''};
+let drawingEditMode=false,drawingTool='edit';
+const drawingRenderCache=new Map();
 const drawingEditor=new DrawingEditor($('#drawingSvg'),{onSelectionChange:updateEditorSelection,onStateChange:updateEditorState});
 const drawingNavigator=new DrawingNavigator($('#drawingView'),$('#drawingSvg'));
 
@@ -58,7 +60,7 @@ async function importFile(file){
 
 worker.onmessage=e=>{
   setBusy(false);if(!e.data.ok){const where=e.data.stage?` [${e.data.stage}]`:'';log('Ошибка'+where+': '+e.data.error);console.error('SLDASM worker error',e.data);alert(`Ошибка импорта${where}: ${e.data.error}`);return}
-  Object.assign(state,e.data);renderAll();
+  Object.assign(state,e.data);drawingRenderCache.clear();renderAll();
   const n=state.rec.nativeAssembly;
   if(n?.root)$('#projectName').textContent=n.root;
   const geo=state.rec.geometryAvailable!==false;
@@ -79,18 +81,29 @@ function renderAll(){
   if(geo)$('#selectionInfo').textContent=`Verified geometry · ${r.recognition?.counts?.verifiedCylinders||0} цилиндр. · ${r.recognition?.counts?.verifiedPlanes||0} плоск.`;renderTree();renderFeatures();renderDimensions();renderAssembly();updateDrawingModeAvailability();renderCurrentDrawing();$('#exportDrawingBtn').disabled=!r;
 }
 
+function drawingCacheKey(){
+  return [APP_VERSION,state.fileName||'untitled',state.fileSize||0,state.drawingMode,state.drawingMode==='partDetail'?(state.selectedComponentId||'part'):'sheet',document.documentElement.dataset.theme||'light'].join('|');
+}
+function finalizeCachedDrawing(cacheKey){
+  const svg=$('#drawingSvg');
+  drawingRenderCache.set(cacheKey,{viewBox:svg.getAttribute('viewBox')||'0 0 1200 760',html:svg.innerHTML});
+  finalizeDrawingRender();
+}
 function renderCurrentDrawing(){
   if(!state.rec)return;
-  const r=state.rec,n=r.nativeAssembly;
+  const r=state.rec,n=r.nativeAssembly,svg=$('#drawingSvg'),cacheKey=drawingCacheKey(),cached=drawingRenderCache.get(cacheKey);
+  if(cached){
+    svg.setAttribute('viewBox',cached.viewBox);svg.innerHTML=cached.html;finalizeDrawingRender();return;
+  }
   if(state.drawingMode==='assemblyDetailed'){
     const projectName=$('#projectName')?.textContent||state.fileName?.replace(/\.[^.]+$/,'')||n?.root||'SLDASM';
-    if(r.tessellation?.mode==='triangle-strips'&&r.recognition) renderAssemblyProductionSheet($('#drawingSvg'),r,{projectName,fileName:state.fileName,theme:document.documentElement.dataset.theme,mode:'assemblyDetailed'});
-    else renderNativeAssemblyDrawing($('#drawingSvg'),n,{projectName,fileName:state.fileName,theme:document.documentElement.dataset.theme});
-    finalizeDrawingRender();return;
+    if(r.tessellation?.mode==='triangle-strips'&&r.recognition) renderAssemblyProductionSheet(svg,r,{projectName,fileName:state.fileName,theme:document.documentElement.dataset.theme,mode:'assemblyDetailed'});
+    else renderNativeAssemblyDrawing(svg,n,{projectName,fileName:state.fileName,theme:document.documentElement.dataset.theme});
+    finalizeCachedDrawing(cacheKey);return;
   }
   if(state.drawingMode==='partDetail'){
-    renderComponentProductionSheet($('#drawingSvg'),r,{componentId:state.selectedComponentId,componentName:state.selectedComponentName||'Выбранная деталь',fileName:state.fileName,theme:document.documentElement.dataset.theme});
-    finalizeDrawingRender();return;
+    renderComponentProductionSheet(svg,r,{componentId:state.selectedComponentId,componentName:state.selectedComponentName||'Выбранная деталь',fileName:state.fileName,theme:document.documentElement.dataset.theme});
+    finalizeCachedDrawing(cacheKey);return;
   }
   if(r.tessellation?.mode==='triangle-strips'&&r.recognition){
     const projectName=$('#projectName')?.textContent||state.fileName?.replace(/\.[^.]+$/,'')||n?.root||'SLDASM';
@@ -98,31 +111,57 @@ function renderCurrentDrawing(){
     r.drawingProfile=profile.profile;
     r.drawingProfileConfidence=profile.confidence;
     if(profile.profile==='GENERAL'){
-      renderAssemblyProductionSheet($('#drawingSvg'),r,{projectName,fileName:state.fileName,theme:document.documentElement.dataset.theme,mode:state.drawingMode});
+      renderAssemblyProductionSheet(svg,r,{projectName,fileName:state.fileName,theme:document.documentElement.dataset.theme,mode:state.drawingMode});
     }else{
-      renderTessRecognitionDrawing($('#drawingSvg'),r,{projectName,fileName:state.fileName,theme:document.documentElement.dataset.theme,mode:state.drawingMode});
+      renderTessRecognitionDrawing(svg,r,{projectName,fileName:state.fileName,theme:document.documentElement.dataset.theme,mode:state.drawingMode});
     }
-    finalizeDrawingRender();return;
+    finalizeCachedDrawing(cacheKey);return;
   }
-  $('#drawingSvg').setAttribute('viewBox','0 0 1200 760');$('#drawingSvg').innerHTML=`<rect width="1200" height="760" fill="${document.documentElement.dataset.theme==='dark'?'#0d1522':'#fff'}"/><g font-family="-apple-system,BlinkMacSystemFont,system-ui" text-anchor="middle"><text x="600" y="285" font-size="36" font-weight="700" fill="${document.documentElement.dataset.theme==='dark'?'#f4f7fb':'#17202b'}">SLDASM: структура сборки импортирована</text><text x="600" y="340" font-size="22" fill="#6e7781">${esc(n?.componentCount||0)} позиций · ${esc(n?.occurrenceCount||0)} вхождений</text><text x="600" y="400" font-size="18" fill="#6e7781">Встроенная FaceTessellations-геометрия в этом файле не найдена.</text></g>`;
-  finalizeDrawingRender();
+  svg.setAttribute('viewBox','0 0 1200 760');svg.innerHTML=`<rect width="1200" height="760" fill="${document.documentElement.dataset.theme==='dark'?'#0d1522':'#fff'}"/><g font-family="-apple-system,BlinkMacSystemFont,system-ui" text-anchor="middle"><text x="600" y="285" font-size="36" font-weight="700" fill="${document.documentElement.dataset.theme==='dark'?'#f4f7fb':'#17202b'}">SLDASM: структура сборки импортирована</text><text x="600" y="340" font-size="22" fill="#6e7781">${esc(n?.componentCount||0)} позиций · ${esc(n?.occurrenceCount||0)} вхождений</text><text x="600" y="400" font-size="18" fill="#6e7781">Встроенная FaceTessellations-геометрия в этом файле не найдена.</text></g>`;
+  finalizeCachedDrawing(cacheKey);
 }
-
 
 function drawingEditorKey(){return [state.fileName||'untitled',state.fileSize||0,state.drawingMode,state.drawingMode==='partDetail'?(state.selectedComponentId||'part'):'sheet'].join('|')}
 function finalizeDrawingRender(){drawingNavigator.captureBase({reset:true});drawingEditor.setKey(drawingEditorKey());drawingEditor.refresh()}
 function updateEditorSelection(info){
   const sel=$('#editorSelection'),txt=$('#editorText'),tp=$('#editorTolPlus'),tm=$('#editorTolMinus');
   if(!sel)return;
-  if(!info){sel.textContent=drawingEditor.enabled?'Выберите размер, надпись или обозначение на листе.':'Включите «Правка» и выберите размер, надпись или обозначение на листе.';if(txt)txt.value='';if(tp)tp.value='';if(tm)tm.value='';return}
+  if(!info){
+    if(!drawingEditMode)sel.textContent='Нажмите «Правка», чтобы открыть инструменты.';
+    else if(drawingTool!=='edit')sel.textContent=`Активен инструмент «${drawingTool==='zoom'?'Зум':'Панорама'}». Для изменения элементов выберите «Редактировать».`;
+    else sel.textContent='Выберите размер, надпись или обозначение на листе.';
+    if(txt)txt.value='';if(tp)tp.value='';if(tm)tm.value='';return;
+  }
   sel.textContent=`Выбрано: ${info.kind==='element'?'элемент чертежа':info.kind}${info.hidden?' · скрыт':''}`;
   if(txt)txt.value=info.text||'';if(tp)tp.value=info.tolPlus||'';if(tm)tm.value=info.tolMinus||'';
 }
 function updateEditorState(st){
   const status=$('#editorStatus'),edit=$('#editDrawingBtn'),undo=$('#undoDrawingBtn'),redo=$('#redoDrawingBtn');
-  if(status)status.textContent=st.enabled?`правка · ${st.editCount}`:'выкл';if(edit)edit.classList.toggle('active',st.enabled);if(undo)undo.disabled=!st.canUndo;if(redo)redo.disabled=!st.canRedo;
+  if(status)status.textContent=drawingEditMode?`${drawingTool==='edit'?'редактирование':drawingTool==='zoom'?'зум':'панорама'} · ${st.editCount}`:'выкл';
+  if(edit)edit.classList.toggle('active',drawingEditMode);
+  if(undo)undo.disabled=!st.canUndo;if(redo)redo.disabled=!st.canRedo;
 }
-function setDrawingEditorEnabled(on){drawingEditor.setEnabled(on);drawingNavigator.setEnabled(on);$('#drawingSvg').classList.toggle('drawing-editor-enabled',on);document.querySelector('.right')?.classList.toggle('editor-active',!!on);log(on?'Продвинутая правка включена: колесо масштабирует область под курсором, средняя кнопка перемещает лист.':'Режим ручной правки чертежа выключен.')}
+function syncDrawingEditUI(){
+  const palette=$('#drawingToolPalette'),card=$('#drawingEditorCard'),drawingActive=$('#drawingView')?.classList.contains('active-view');
+  palette?.classList.toggle('hidden',!drawingEditMode);
+  $$('[data-drawing-tool]').forEach(b=>b.classList.toggle('active',b.dataset.drawingTool===drawingTool));
+  if(card)card.classList.toggle('hidden',!(drawingActive&&drawingEditMode&&drawingTool==='edit'));
+  $('#drawingSvg')?.classList.toggle('drawing-editor-enabled',drawingEditMode&&drawingTool==='edit');
+  document.querySelector('.right')?.classList.toggle('editor-active',drawingActive&&drawingEditMode&&drawingTool==='edit');
+}
+function setDrawingTool(tool,{silent=false}={}){
+  if(!['edit','zoom','pan'].includes(tool))tool='edit';
+  drawingTool=tool;drawingNavigator.setTool(tool);
+  drawingEditor.setEnabled(drawingEditMode&&tool==='edit');
+  syncDrawingEditUI();updateEditorSelection(drawingEditor.selectionInfo?.()||null);
+  if(!silent&&drawingEditMode)log(`Правка: инструмент «${tool==='edit'?'Редактировать':tool==='zoom'?'Зум':'Панорама'}».`);
+}
+function setDrawingEditorEnabled(on){
+  drawingEditMode=!!on;drawingNavigator.setEnabled(drawingEditMode);
+  if(drawingEditMode)setDrawingTool(drawingTool||'edit',{silent:true});
+  else{drawingEditor.setEnabled(false);syncDrawingEditUI();updateEditorSelection(null)}
+  log(drawingEditMode?'Панель правки включена: отдельно доступны «Редактировать», «Зум» и «Панорама». Колесо — зум к курсору.':'Режим ручной правки чертежа выключен.');
+}
 
 function updateDrawingModeAvailability(){
   if(!state.rec)return;
@@ -135,7 +174,7 @@ function updateDrawingModeAvailability(){
 
 function renderTree(){
   const r=state.rec,n=r.nativeAssembly;
-  const rows=[['Файл',state.fileName],['Формат','SLDASM'],['Адаптер','Drawing Intelligence v1.4.0'],['Контейнер',n.container],['Streams',n.streamCount||0],['Позиций',n.componentCount],['Вхождений',n.occurrenceCount],['Tess-блоков',n.faceBlocks||0],['Исходных треуг.',n.sourceTriangles||0],['Сценовых треуг.',n.triangles||0],...(r.counts.displayTriangles&&r.counts.displayTriangles!==r.counts.triangles?[['3D LOD',r.counts.displayTriangles],['Передача','Stack-safe']]:[]),['Размещено',n.mappedOccurrences||0]];
+  const rows=[['Файл',state.fileName],['Формат','SLDASM'],['Адаптер','Drawing Intelligence v1.4.1'],['Контейнер',n.container],['Streams',n.streamCount||0],['Позиций',n.componentCount],['Вхождений',n.occurrenceCount],['Tess-блоков',n.faceBlocks||0],['Исходных треуг.',n.sourceTriangles||0],['Сценовых треуг.',n.triangles||0],...(r.counts.displayTriangles&&r.counts.displayTriangles!==r.counts.triangles?[['3D LOD',r.counts.displayTriangles],['Передача','Stack-safe']]:[]),['Размещено',n.mappedOccurrences||0]];
   $('#treeBody').classList.remove('empty');
   $('#treeBody').innerHTML=rows.map(([a,b])=>`<div class="tree-row"><b>${esc(a)}</b><span>${esc(b)}</span></div>`).join('');
 }
@@ -189,14 +228,14 @@ function renderDimensions(){
     $('#dimensionsTable').innerHTML=d.map(x=>{const sym=dimensionSymbol(x);return `<tr><td>${esc(x.type)}</td><td>${esc(sym||x.label)}</td><td>${fmt(x.value)} ${esc(x.unit||'mm')}</td><td>${Math.round((x.confidence||0)*100)}% · ${esc(x.source||'TESS')}</td></tr>`}).join('');
   }else{
     $('#dimensionCards').classList.add('empty');$('#dimensionCards').textContent='Встроенная геометрия не найдена — габариты недоступны.';
-    $('#dimensionsTable').innerHTML='<tr><td colspan="4">v1.4.0 сохраняет VERIFIED-геометрию и добавляет ручную доводку листа: перемещение, скрытие, допуски и технические обозначения. Нативный Parasolid B-Rep пока не декодируется.</td></tr>';
+    $('#dimensionsTable').innerHTML='<tr><td colspan="4">v1.4.1 сохраняет VERIFIED-геометрию и добавляет ручную доводку листа: перемещение, скрытие, допуски и технические обозначения. Нативный Parasolid B-Rep пока не декодируется.</td></tr>';
   }
 }
 
 
 function renderAssembly(){
   const r=state.rec,root=$('#assemblyBody'),n=r.nativeAssembly,components=n.components||[],geo=r.geometryAvailable!==false;
-  root.innerHTML=`<div class="assembly-head"><div><h3>${esc(n.root)} · SLDASM</h3><p class="hint">Drawing Intelligence v1.4.0 · ${esc(n.container)} · полностью локально</p></div><span class="adapter-badge">SLDASM</span></div><div class="assembly-grid"><section><h4>Дерево компонентов</h4><ul class="component-tree"><li><b>▾ ${esc(n.root)}</b><ul>${components.map(c=>`<li ${c.instances?.[0]?`data-component-id="${esc(c.instances[0])}" data-component-name="${esc(c.name)}" class="selectable-component"`:''}><span>${c.type==='assembly'?'▣':'◫'} ${esc(c.name)}</span><em>×${c.count}</em><small>${esc(c.file)}</small></li>`).join('')||'<li class="muted">Компоненты не извлечены из этого контейнера</li>'}</ul></li></ul></section><section><h4>BOM · ${components.length} позиций</h4><div class="bom bom-wide"><div class="head">№</div><div class="head">Компонент</div><div class="head">Кол-во</div>${components.map((c,i)=>`<div>${i+1}</div><div><b>${esc(c.name)}</b><small>${esc(c.file)} · ${c.type==='assembly'?'подсборка':'деталь'}</small></div><div>${c.count}</div>`).join('')}</div></section></div><div class="assembly-actions"><button data-open-assembly-drawing>Открыть производственный сборочный чертёж</button><button data-open-part-drawing ${state.selectedComponentId?'':'disabled'}>Чертёж выбранной детали</button></div><div class="native-note"><b>v1.4.0:</b> структура/BOM читаются из нативных потоков SLDASM. <b>3D:</b> ${geo?`собрано из FaceTessellations с матрицами вхождений (${esc(n.mappedOccurrences||0)} размещено / ${esc(n.triangles||0)} треугольников сцены).`:'встроенная тесселяция в файле не найдена.'} Verified Geometry подтверждает аналитические плоскости/цилиндры по fit-критериям, а Drawing Intelligence безопасно выбирает GENERAL/AXIAL и даёт контекстные размеры выбранной детали; редактор позволяет вручную довести проекции, размеры, позиции, допуски и обозначения. Нативный Parasolid B-Rep пока не декодируется.</div>`;
+  root.innerHTML=`<div class="assembly-head"><div><h3>${esc(n.root)} · SLDASM</h3><p class="hint">Drawing Intelligence v1.4.1 · ${esc(n.container)} · полностью локально</p></div><span class="adapter-badge">SLDASM</span></div><div class="assembly-grid"><section><h4>Дерево компонентов</h4><ul class="component-tree"><li><b>▾ ${esc(n.root)}</b><ul>${components.map(c=>`<li ${c.instances?.[0]?`data-component-id="${esc(c.instances[0])}" data-component-name="${esc(c.name)}" class="selectable-component"`:''}><span>${c.type==='assembly'?'▣':'◫'} ${esc(c.name)}</span><em>×${c.count}</em><small>${esc(c.file)}</small></li>`).join('')||'<li class="muted">Компоненты не извлечены из этого контейнера</li>'}</ul></li></ul></section><section><h4>BOM · ${components.length} позиций</h4><div class="bom bom-wide"><div class="head">№</div><div class="head">Компонент</div><div class="head">Кол-во</div>${components.map((c,i)=>`<div>${i+1}</div><div><b>${esc(c.name)}</b><small>${esc(c.file)} · ${c.type==='assembly'?'подсборка':'деталь'}</small></div><div>${c.count}</div>`).join('')}</div></section></div><div class="assembly-actions"><button data-open-assembly-drawing>Открыть производственный сборочный чертёж</button><button data-open-part-drawing ${state.selectedComponentId?'':'disabled'}>Чертёж выбранной детали</button></div><div class="native-note"><b>v1.4.1:</b> структура/BOM читаются из нативных потоков SLDASM. <b>3D:</b> ${geo?`собрано из FaceTessellations с матрицами вхождений (${esc(n.mappedOccurrences||0)} размещено / ${esc(n.triangles||0)} треугольников сцены).`:'встроенная тесселяция в файле не найдена.'} Verified Geometry подтверждает аналитические плоскости/цилиндры по fit-критериям, а Drawing Intelligence безопасно выбирает GENERAL/AXIAL и даёт контекстные размеры выбранной детали; редактор позволяет вручную довести проекции, размеры, позиции, допуски и обозначения. Нативный Parasolid B-Rep пока не декодируется.</div>`;
 }
 
 
@@ -205,7 +244,7 @@ $('#assemblyBody').addEventListener('click',e=>{const comp=e.target.closest('[da
 
 function fitDrawingSheet(){const ws=$('#drawingView'),svg=$('#drawingSvg');if(!ws||!svg)return;svg.classList.add('fit-sheet');drawingNavigator.fit();requestAnimationFrame(()=>{ws.scrollTop=0;ws.scrollLeft=Math.max(0,(ws.scrollWidth-ws.clientWidth)/2);});}
 function scheduleDrawingFit(){requestAnimationFrame(()=>fitDrawingSheet());}
-function switchTab(name){$$('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));$$('.view').forEach(v=>v.classList.remove('active-view'));$(`#${name}View`).classList.add('active-view');$('#viewTitle').textContent={model:'3D модель',drawing:'Инженерный авточертёж',dimensions:'Распознанные размеры',assembly:'Состав сборки'}[name];$('#modelActions').classList.toggle('hidden',name!=='model');$('#drawingActions').classList.toggle('hidden',name!=='drawing');$('#drawingEditorCard')?.classList.toggle('hidden',name!=='drawing');if(name!=='drawing'&&drawingEditor.enabled)setDrawingEditorEnabled(false);if(name==='model')viewer.draw();if(name==='drawing'&&state.rec){renderCurrentDrawing();scheduleDrawingFit()}}
+function switchTab(name){$$('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));$$('.view').forEach(v=>v.classList.remove('active-view'));$(`#${name}View`).classList.add('active-view');$('#viewTitle').textContent={model:'3D модель',drawing:'Инженерный авточертёж',dimensions:'Распознанные размеры',assembly:'Состав сборки'}[name];$('#modelActions').classList.toggle('hidden',name!=='model');$('#drawingActions').classList.toggle('hidden',name!=='drawing');if(name!=='drawing'&&drawingEditMode)setDrawingEditorEnabled(false);syncDrawingEditUI();if(name==='model')viewer.draw();if(name==='drawing'&&state.rec){renderCurrentDrawing();scheduleDrawingFit();syncDrawingEditUI()}}
 $$('.tab').forEach(b=>b.addEventListener('click',()=>switchTab(b.dataset.tab)));
 $$('[data-drawing-mode]').forEach(b=>b.addEventListener('click',()=>{state.drawingMode=b.dataset.drawingMode;$$('[data-drawing-mode]').forEach(x=>x.classList.toggle('active',x===b));if(state.rec){renderDimensions();renderCurrentDrawing();scheduleDrawingFit()}log(`Режим чертежа: ${b.textContent}.`)}));
 $('#themeToggle').addEventListener('click',()=>applyTheme(document.documentElement.dataset.theme==='dark'?'light':'dark'));
@@ -213,7 +252,8 @@ $('#fitBtn').addEventListener('click',()=>viewer.fit());$('#solidBtn').addEventL
 $('#fileInput').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;await importFile(f);e.target.value=''})
 const drop=$('#dropZone');['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('drag')}));['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('drag')}));drop.addEventListener('drop',async e=>{const f=e.dataTransfer.files[0];if(f)await importFile(f)});
 
-const editDrawingBtn=$('#editDrawingBtn');if(editDrawingBtn)editDrawingBtn.addEventListener('click',()=>setDrawingEditorEnabled(!drawingEditor.enabled));
+const editDrawingBtn=$('#editDrawingBtn');if(editDrawingBtn)editDrawingBtn.addEventListener('click',()=>setDrawingEditorEnabled(!drawingEditMode));
+$$('[data-drawing-tool]').forEach(b=>b.addEventListener('click',()=>setDrawingTool(b.dataset.drawingTool)));
 $('#undoDrawingBtn')?.addEventListener('click',()=>drawingEditor.undo());$('#redoDrawingBtn')?.addEventListener('click',()=>drawingEditor.redo());
 $('#applyEditorText')?.addEventListener('click',()=>drawingEditor.setSelectedText($('#editorText')?.value||''));
 $('#applyEditorTolerance')?.addEventListener('click',()=>drawingEditor.setTolerance($('#editorTolPlus')?.value||'',$('#editorTolMinus')?.value||''));

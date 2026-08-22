@@ -91,7 +91,7 @@ export class DrawingEditor{
   }
   _bind(){
     this.svg.addEventListener('pointerdown',ev=>{
-      if(!this.enabled)return;const target=ev.target.closest?.('[data-editor-id]');
+      if(!this.enabled||ev.button!==0)return;const target=ev.target.closest?.('[data-editor-id]');
       if(!target){this.deselect();return}ev.preventDefault();ev.stopPropagation();this.select(target.dataset.editorId);
       const p=svgPoint(this.svg,ev),id=target.dataset.editorId,edit=this._peekFor(id),before=deepClone(this.data);
       this.drag={id,target,start:p,dx:safeNum(edit.dx),dy:safeNum(edit.dy),before,moved:false};target.setPointerCapture?.(ev.pointerId);

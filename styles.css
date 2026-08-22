@@ -121,7 +121,7 @@ html[data-theme="dark"] .drawing-workspace{background:linear-gradient(145deg,#10
 /* v0.8.0 · TESS recognition */
 .feature strong{font-size:10px}.dim-card small{display:block;margin-top:3px}.recognition .feature:nth-child(3){background:color-mix(in srgb,var(--green) 5%,var(--panel))}.recognition .feature:nth-child(3) strong{color:var(--green)}
 
-/* v1.3.1 · Verified Geometry + drawing auto-fit */
+/* v1.4.0 · Verified Geometry + drawing auto-fit */
 .dim-card span{display:block;color:var(--text);font-size:11px;line-height:1.25;margin-bottom:3px}
 .dim-card b{display:block;font:700 14px/1.25 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--text-strong);white-space:normal}
 .verified-feature{background:color-mix(in srgb,var(--green) 7%,var(--panel))!important}.verified-feature strong{color:var(--green)!important}
@@ -129,7 +129,7 @@ html[data-theme="dark"] .drawing-workspace{background:linear-gradient(145deg,#10
 .drawing-workspace svg.fit-sheet{height:calc(100% - 4px);width:auto;max-width:none;min-width:0;flex:none;background:#fff;box-shadow:0 10px 28px rgba(29,42,61,.14)}
 @media(max-width:760px){.drawing-workspace.active-view{display:block}.drawing-workspace svg.fit-sheet{width:760px;height:auto;min-width:760px}}
 
-/* v1.3.1 · Drawing Editor Core */
+/* v1.4.0 · Drawing Editor Core */
 .hidden{display:none!important}
 .editor-feature{background:color-mix(in srgb,var(--accent) 5%,var(--panel))!important}.editor-feature strong{color:var(--green)!important}
 .drawing-editor-card{border-color:color-mix(in srgb,var(--accent) 20%,var(--line))}.drawing-editor-body{padding:10px 12px;display:grid;gap:9px}.drawing-editor-body label{display:grid;gap:4px;color:var(--muted);font-size:10px}.drawing-editor-body input{width:100%;min-height:34px;border:1px solid var(--line);border-radius:9px;padding:7px 9px;background:var(--panel-2);color:var(--text-strong);font-size:12px}.editor-selection{margin:0;padding:8px 9px;border-radius:9px;background:var(--panel-2);border:1px solid var(--line);color:var(--muted);font-size:11px;line-height:1.4}.editor-tolerance-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.editor-actions-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}.editor-add-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}.editor-add-row button{padding-inline:6px;font-size:10.5px}.editor-footer-row{display:grid;gap:6px;padding-top:4px;border-top:1px solid var(--line)}.editor-footer-row button{color:var(--red);border-color:color-mix(in srgb,var(--red) 25%,var(--line));background:color-mix(in srgb,var(--red) 5%,var(--panel))}.editor-footer-row small{color:var(--muted);line-height:1.35}
@@ -137,3 +137,24 @@ html[data-theme="dark"] .drawing-workspace{background:linear-gradient(145deg,#10
 .editor-custom{cursor:move}
 @media(max-width:1050px){.drawing-editor-card{grid-column:auto}.editor-actions-grid{grid-template-columns:repeat(4,1fr)}.editor-add-row{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:760px){.right.editor-active{display:block;margin:8px 0}.right.editor-active>.card:not(#drawingEditorCard){display:none}.right.editor-active #drawingEditorCard{display:block!important}.editor-actions-grid{grid-template-columns:1fr 1fr}.editor-add-row{grid-template-columns:1fr 1fr 1fr}}
+
+/* v1.4.0 · Advanced Edit + large assembly usability */
+.viewport-head{flex-wrap:wrap;align-items:flex-start;gap:8px;overflow:hidden}
+.viewport-head>div:first-child{min-width:0;flex:1 1 220px;max-width:100%}
+.viewport-head>div:first-child b,.viewport-head>div:first-child span{overflow-wrap:anywhere;word-break:break-word;white-space:normal;max-width:100%}
+.view-actions{min-width:0;max-width:100%;flex:1 1 auto;flex-wrap:wrap;justify-content:flex-end;overflow:visible}
+#drawingActions{flex:1 1 100%;justify-content:flex-start;align-items:center}
+#drawingActions .mode-switch{min-width:0;max-width:100%;flex:1 1 520px;flex-wrap:wrap;overflow:visible}
+#drawingActions .mode-switch button{white-space:normal;line-height:1.15}
+.drawing-workspace.advanced-edit-nav{cursor:crosshair;overscroll-behavior:contain}
+.drawing-workspace.advanced-edit-nav svg{user-select:none;-webkit-user-select:none}
+.drawing-workspace.drawing-panning{cursor:grabbing!important}
+.drawing-workspace.advanced-edit-nav::after{content:'Колесо — зум к курсору  ·  Средняя кнопка — панорама  ·  Лист — вписать';position:absolute;left:12px;bottom:10px;z-index:3;max-width:calc(100% - 24px);padding:5px 8px;border-radius:8px;background:color-mix(in srgb,var(--panel) 88%,transparent);border:1px solid var(--line);color:var(--muted);font-size:10px;pointer-events:none;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.project b{white-space:normal;overflow-wrap:anywhere;word-break:break-word;line-height:1.15;max-height:2.4em;overflow:hidden}
+@media(max-width:760px){
+  .viewport-head{display:flex;flex-direction:column;align-items:stretch}
+  .view-actions,#drawingActions,.action-group{width:100%;max-width:100%}
+  #drawingActions .mode-switch{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));width:100%;flex:none}
+  #drawingActions .mode-switch button{width:100%;min-width:0;padding-inline:5px}
+  .drawing-workspace.advanced-edit-nav::after{font-size:9px;left:7px;bottom:7px;max-width:calc(100% - 14px)}
+}

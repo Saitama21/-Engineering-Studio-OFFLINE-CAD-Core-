@@ -3,9 +3,10 @@ import {drawingFromRecognition,renderDrawing,serializeDrawing,renderNativeAssemb
 import {renderTessRecognitionDrawing} from './drawing/tess-recognition-drawing.js';
 import {renderAssemblyProductionSheet,renderComponentProductionSheet,assemblyDrawingProfile} from './drawing/assembly-production-sheet-v130.js';
 import {DrawingEditor} from './drawing/drawing-editor.js';
+import {DrawingNavigator} from './drawing/drawing-navigator.js';
 
-const APP_VERSION='1.3.1';
-const BUILD_LABEL='DRAWING INTELLIGENCE FIX';
+const APP_VERSION='1.4.0';
+const BUILD_LABEL='ADVANCED EDIT + LARGE ASSEMBLY PERFORMANCE';
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const viewer=new WireframeViewer($('#viewerCanvas'));
 viewer.onSelect=(id,instance)=>{
@@ -22,6 +23,7 @@ viewer.onSelect=(id,instance)=>{
 const worker=new Worker('./import-worker.js',{type:'module'});
 let state={fileName:null,fileSize:0,rec:null,dimensions:[],types:[],parseMs:0,drawingMode:'production',selectedComponentId:null,selectedComponentName:''};
 const drawingEditor=new DrawingEditor($('#drawingSvg'),{onSelectionChange:updateEditorSelection,onStateChange:updateEditorState});
+const drawingNavigator=new DrawingNavigator($('#drawingView'),$('#drawingSvg'));
 
 const THEME_KEY='engineering-studio-theme';
 function applyTheme(theme,{persist=true}={}){
@@ -108,7 +110,7 @@ function renderCurrentDrawing(){
 
 
 function drawingEditorKey(){return [state.fileName||'untitled',state.fileSize||0,state.drawingMode,state.drawingMode==='partDetail'?(state.selectedComponentId||'part'):'sheet'].join('|')}
-function finalizeDrawingRender(){drawingEditor.setKey(drawingEditorKey());drawingEditor.refresh()}
+function finalizeDrawingRender(){drawingNavigator.captureBase({reset:true});drawingEditor.setKey(drawingEditorKey());drawingEditor.refresh()}
 function updateEditorSelection(info){
   const sel=$('#editorSelection'),txt=$('#editorText'),tp=$('#editorTolPlus'),tm=$('#editorTolMinus');
   if(!sel)return;
@@ -120,7 +122,7 @@ function updateEditorState(st){
   const status=$('#editorStatus'),edit=$('#editDrawingBtn'),undo=$('#undoDrawingBtn'),redo=$('#redoDrawingBtn');
   if(status)status.textContent=st.enabled?`правка · ${st.editCount}`:'выкл';if(edit)edit.classList.toggle('active',st.enabled);if(undo)undo.disabled=!st.canUndo;if(redo)redo.disabled=!st.canRedo;
 }
-function setDrawingEditorEnabled(on){drawingEditor.setEnabled(on);$('#drawingSvg').classList.toggle('drawing-editor-enabled',on);document.querySelector('.right')?.classList.toggle('editor-active',!!on);log(on?'Режим ручной правки чертежа включён.':'Режим ручной правки чертежа выключен.')}
+function setDrawingEditorEnabled(on){drawingEditor.setEnabled(on);drawingNavigator.setEnabled(on);$('#drawingSvg').classList.toggle('drawing-editor-enabled',on);document.querySelector('.right')?.classList.toggle('editor-active',!!on);log(on?'Продвинутая правка включена: колесо масштабирует область под курсором, средняя кнопка перемещает лист.':'Режим ручной правки чертежа выключен.')}
 
 function updateDrawingModeAvailability(){
   if(!state.rec)return;
@@ -133,7 +135,7 @@ function updateDrawingModeAvailability(){
 
 function renderTree(){
   const r=state.rec,n=r.nativeAssembly;
-  const rows=[['Файл',state.fileName],['Формат','SLDASM'],['Адаптер','Drawing Intelligence v1.3.1'],['Контейнер',n.container],['Streams',n.streamCount||0],['Позиций',n.componentCount],['Вхождений',n.occurrenceCount],['Tess-блоков',n.faceBlocks||0],['Исходных треуг.',n.sourceTriangles||0],['Сценовых треуг.',n.triangles||0],...(r.counts.displayTriangles&&r.counts.displayTriangles!==r.counts.triangles?[['3D LOD',r.counts.displayTriangles],['Передача','Stack-safe']]:[]),['Размещено',n.mappedOccurrences||0]];
+  const rows=[['Файл',state.fileName],['Формат','SLDASM'],['Адаптер','Drawing Intelligence v1.4.0'],['Контейнер',n.container],['Streams',n.streamCount||0],['Позиций',n.componentCount],['Вхождений',n.occurrenceCount],['Tess-блоков',n.faceBlocks||0],['Исходных треуг.',n.sourceTriangles||0],['Сценовых треуг.',n.triangles||0],...(r.counts.displayTriangles&&r.counts.displayTriangles!==r.counts.triangles?[['3D LOD',r.counts.displayTriangles],['Передача','Stack-safe']]:[]),['Размещено',n.mappedOccurrences||0]];
   $('#treeBody').classList.remove('empty');
   $('#treeBody').innerHTML=rows.map(([a,b])=>`<div class="tree-row"><b>${esc(a)}</b><span>${esc(b)}</span></div>`).join('');
 }
@@ -187,21 +189,21 @@ function renderDimensions(){
     $('#dimensionsTable').innerHTML=d.map(x=>{const sym=dimensionSymbol(x);return `<tr><td>${esc(x.type)}</td><td>${esc(sym||x.label)}</td><td>${fmt(x.value)} ${esc(x.unit||'mm')}</td><td>${Math.round((x.confidence||0)*100)}% · ${esc(x.source||'TESS')}</td></tr>`}).join('');
   }else{
     $('#dimensionCards').classList.add('empty');$('#dimensionCards').textContent='Встроенная геометрия не найдена — габариты недоступны.';
-    $('#dimensionsTable').innerHTML='<tr><td colspan="4">v1.3.1 сохраняет VERIFIED-геометрию и добавляет ручную доводку листа: перемещение, скрытие, допуски и технические обозначения. Нативный Parasolid B-Rep пока не декодируется.</td></tr>';
+    $('#dimensionsTable').innerHTML='<tr><td colspan="4">v1.4.0 сохраняет VERIFIED-геометрию и добавляет ручную доводку листа: перемещение, скрытие, допуски и технические обозначения. Нативный Parasolid B-Rep пока не декодируется.</td></tr>';
   }
 }
 
 
 function renderAssembly(){
   const r=state.rec,root=$('#assemblyBody'),n=r.nativeAssembly,components=n.components||[],geo=r.geometryAvailable!==false;
-  root.innerHTML=`<div class="assembly-head"><div><h3>${esc(n.root)} · SLDASM</h3><p class="hint">Drawing Intelligence v1.3.1 · ${esc(n.container)} · полностью локально</p></div><span class="adapter-badge">SLDASM</span></div><div class="assembly-grid"><section><h4>Дерево компонентов</h4><ul class="component-tree"><li><b>▾ ${esc(n.root)}</b><ul>${components.map(c=>`<li ${c.instances?.[0]?`data-component-id="${esc(c.instances[0])}" data-component-name="${esc(c.name)}" class="selectable-component"`:''}><span>${c.type==='assembly'?'▣':'◫'} ${esc(c.name)}</span><em>×${c.count}</em><small>${esc(c.file)}</small></li>`).join('')||'<li class="muted">Компоненты не извлечены из этого контейнера</li>'}</ul></li></ul></section><section><h4>BOM · ${components.length} позиций</h4><div class="bom bom-wide"><div class="head">№</div><div class="head">Компонент</div><div class="head">Кол-во</div>${components.map((c,i)=>`<div>${i+1}</div><div><b>${esc(c.name)}</b><small>${esc(c.file)} · ${c.type==='assembly'?'подсборка':'деталь'}</small></div><div>${c.count}</div>`).join('')}</div></section></div><div class="assembly-actions"><button data-open-assembly-drawing>Открыть производственный сборочный чертёж</button><button data-open-part-drawing ${state.selectedComponentId?'':'disabled'}>Чертёж выбранной детали</button></div><div class="native-note"><b>v1.3.1:</b> структура/BOM читаются из нативных потоков SLDASM. <b>3D:</b> ${geo?`собрано из FaceTessellations с матрицами вхождений (${esc(n.mappedOccurrences||0)} размещено / ${esc(n.triangles||0)} треугольников сцены).`:'встроенная тесселяция в файле не найдена.'} Verified Geometry подтверждает аналитические плоскости/цилиндры по fit-критериям, а Drawing Intelligence безопасно выбирает GENERAL/AXIAL и даёт контекстные размеры выбранной детали; редактор позволяет вручную довести проекции, размеры, позиции, допуски и обозначения. Нативный Parasolid B-Rep пока не декодируется.</div>`;
+  root.innerHTML=`<div class="assembly-head"><div><h3>${esc(n.root)} · SLDASM</h3><p class="hint">Drawing Intelligence v1.4.0 · ${esc(n.container)} · полностью локально</p></div><span class="adapter-badge">SLDASM</span></div><div class="assembly-grid"><section><h4>Дерево компонентов</h4><ul class="component-tree"><li><b>▾ ${esc(n.root)}</b><ul>${components.map(c=>`<li ${c.instances?.[0]?`data-component-id="${esc(c.instances[0])}" data-component-name="${esc(c.name)}" class="selectable-component"`:''}><span>${c.type==='assembly'?'▣':'◫'} ${esc(c.name)}</span><em>×${c.count}</em><small>${esc(c.file)}</small></li>`).join('')||'<li class="muted">Компоненты не извлечены из этого контейнера</li>'}</ul></li></ul></section><section><h4>BOM · ${components.length} позиций</h4><div class="bom bom-wide"><div class="head">№</div><div class="head">Компонент</div><div class="head">Кол-во</div>${components.map((c,i)=>`<div>${i+1}</div><div><b>${esc(c.name)}</b><small>${esc(c.file)} · ${c.type==='assembly'?'подсборка':'деталь'}</small></div><div>${c.count}</div>`).join('')}</div></section></div><div class="assembly-actions"><button data-open-assembly-drawing>Открыть производственный сборочный чертёж</button><button data-open-part-drawing ${state.selectedComponentId?'':'disabled'}>Чертёж выбранной детали</button></div><div class="native-note"><b>v1.4.0:</b> структура/BOM читаются из нативных потоков SLDASM. <b>3D:</b> ${geo?`собрано из FaceTessellations с матрицами вхождений (${esc(n.mappedOccurrences||0)} размещено / ${esc(n.triangles||0)} треугольников сцены).`:'встроенная тесселяция в файле не найдена.'} Verified Geometry подтверждает аналитические плоскости/цилиндры по fit-критериям, а Drawing Intelligence безопасно выбирает GENERAL/AXIAL и даёт контекстные размеры выбранной детали; редактор позволяет вручную довести проекции, размеры, позиции, допуски и обозначения. Нативный Parasolid B-Rep пока не декодируется.</div>`;
 }
 
 
 
 $('#assemblyBody').addEventListener('click',e=>{const comp=e.target.closest('[data-component-id]');if(comp){viewer.setSelectedComponent(comp.dataset.componentId);state.selectedComponentId=comp.dataset.componentId;state.selectedComponentName=comp.dataset.componentName||comp.querySelector('span')?.textContent?.replace(/^[◫▣]\s*/,'')||'компонент';updateDrawingModeAvailability();renderDimensions();switchTab('model');$('#selectionInfo').textContent=`выбрано: ${state.selectedComponentName}`;log('Выбран компонент 3D: '+state.selectedComponentName+'.');return;}const part=e.target.closest('[data-open-part-drawing]');if(part){if(!state.selectedComponentId)return;state.drawingMode='partDetail';updateDrawingModeAvailability();switchTab('drawing');renderCurrentDrawing();log('Открыт чертёж выбранной детали.');return;}const btn=e.target.closest('[data-open-assembly-drawing]');if(!btn)return;state.drawingMode='assemblyDetailed';updateDrawingModeAvailability();switchTab('drawing');renderCurrentDrawing();log('Открыт производственный сборочный чертёж.');});
 
-function fitDrawingSheet(){const ws=$('#drawingView'),svg=$('#drawingSvg');if(!ws||!svg)return;svg.classList.add('fit-sheet');requestAnimationFrame(()=>{ws.scrollTop=0;ws.scrollLeft=Math.max(0,(ws.scrollWidth-ws.clientWidth)/2);});}
+function fitDrawingSheet(){const ws=$('#drawingView'),svg=$('#drawingSvg');if(!ws||!svg)return;svg.classList.add('fit-sheet');drawingNavigator.fit();requestAnimationFrame(()=>{ws.scrollTop=0;ws.scrollLeft=Math.max(0,(ws.scrollWidth-ws.clientWidth)/2);});}
 function scheduleDrawingFit(){requestAnimationFrame(()=>fitDrawingSheet());}
 function switchTab(name){$$('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));$$('.view').forEach(v=>v.classList.remove('active-view'));$(`#${name}View`).classList.add('active-view');$('#viewTitle').textContent={model:'3D модель',drawing:'Инженерный авточертёж',dimensions:'Распознанные размеры',assembly:'Состав сборки'}[name];$('#modelActions').classList.toggle('hidden',name!=='model');$('#drawingActions').classList.toggle('hidden',name!=='drawing');$('#drawingEditorCard')?.classList.toggle('hidden',name!=='drawing');if(name!=='drawing'&&drawingEditor.enabled)setDrawingEditorEnabled(false);if(name==='model')viewer.draw();if(name==='drawing'&&state.rec){renderCurrentDrawing();scheduleDrawingFit()}}
 $$('.tab').forEach(b=>b.addEventListener('click',()=>switchTab(b.dataset.tab)));

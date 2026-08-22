@@ -1,4 +1,4 @@
-# ROZFOOD Engineering Studio v0.8.0 architecture
+# ROZFOOD Engineering Studio v0.8.1 architecture
 
 `SLDASM → Native Streams → COMPINSTANCETREE + FaceTessellations → Model/Tess mapping → Assembly transforms → 3D scene → Tess Geometry Recognition → Dimensions / Drawing / BOM`
 

@@ -1,7 +1,33 @@
-# Test report · v0.8.0 Tessellation Geometry Recognition
+# TEST REPORT · v0.8.1 Drawing Layout Core
+
+## Automated tests
 
 `npm test` — PASS.
 
-Проверяется: SLDASM импорт, BOM, assembly transforms, запрет standalone SLDPRT, синтетический цилиндр Ø40 × 100, восстановление диаметра/длины, TESS dimensions, TESS Drawing и сборочный Drawing Core v0.8.0.
+Проверено:
+- SLDASM-only импорт;
+- дерево компонентов и BOM;
+- assembly transforms;
+- FaceTessellations;
+- TESS cylinder recognition;
+- новый production sheet renderer;
+- наличие A–A, спецификации и A2-style viewBox 1400×990.
 
-Реальный файл барабана: 17 позиций, 31 вхождение, 28 размещено, 117 tess-блоков, 25 962 сценовых треугольника, ~476 × 1225 × 476 мм, 209 face groups, 86 planes, 67 cylinders, 36 holes, 8 axis clusters.
+## Real assembly validation
+
+Контрольный файл: `Сборка Барабана Глобино.SLDASM`.
+
+Результат:
+- 17 BOM позиций;
+- 31 вхождение;
+- 25 962 треугольника сцены;
+- габарит 476 × 1225 × 476 мм;
+- 86 плоскостей;
+- 67 цилиндров;
+- 36 отверстий;
+- автоматический масштаб листа 1:5;
+- сформирован A2-style сборочный лист с продольными/торцевыми/изометрическими видами, A–A, C/D, позициями, BOM и основной надписью.
+
+## Accuracy status
+
+`TESS / VERIFY`: точный Parasolid B-Rep не декодируется в этой версии.

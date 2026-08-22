@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import {parseSTEP} from './import/step-parser.js';
 import {recognizeSTEP,makeDimensionSet} from './recognition/feature-recognizer.js';
 import {drawingFromRecognition,renderDrawing} from './drawing/drawing-engine.js';
+import {parseSLDASM} from './import/sldasm-adapter.js';
 
 const expected={
   'sample_flange.step':{bounds:[80,80,12],bolt:[6,60,6],main:'XY',section:true},
@@ -33,7 +34,18 @@ for(const name of Object.keys(expected)){
   const fakeSvg={attrs:{},innerHTML:'',setAttribute(k,v){this.attrs[k]=v}};
   renderDrawing(fakeSvg,drawing,{mode:'production',projectName:name,fileName:name,theme:'light'});
   if(!fakeSvg.innerHTML.includes('ROZFOOD ENGINEERING STUDIO'))throw new Error(name+': title block missing');
-  if(!fakeSvg.innerHTML.includes('Drawing Core v0.4.0'))throw new Error(name+': drawing version missing');
+  if(!fakeSvg.innerHTML.includes('Drawing Core v0.4.1'))throw new Error(name+': drawing version missing');
   if(name==='sample_flange.step'&&!fakeSvg.innerHTML.includes('PCD'))throw new Error(name+': PCD annotation missing');
 }
-console.log('All v0.4.0 Drawing Core tests passed.');
+
+// Native SLDASM reference-level adapter smoke test.
+const refs=['C:\\Models\\Bracket.SLDPRT','Bracket-1','Bracket-2','C:\\Models\\Bolt.SLDPRT','Bolt-1','Bolt-2','Bolt-3','C:\\Models\\SubFrame.SLDASM','SubFrame-1'];
+const head=Buffer.from([0xd0,0xcf,0x11,0xe0,0xa1,0xb1,0x1a,0xe1,...new Array(120).fill(0)]);
+const chunks=[head];for(const x of refs){chunks.push(Buffer.from(x+'\0','ascii'));chunks.push(Buffer.from(x+'\0','utf16le'))}
+const sw=parseSLDASM(Buffer.concat(chunks),'Machine.SLDASM');
+if(!sw.isAssembly||sw.geometryAvailable!==false)throw new Error('SLDASM: metadata assembly mode missing');
+const bom=new Map(sw.nativeAssembly.components.map(c=>[c.name,c.count]));
+if(bom.get('Bracket')!==2||bom.get('Bolt')!==3||bom.get('SubFrame')!==1)throw new Error('SLDASM: bad BOM '+JSON.stringify([...bom]));
+if(sw.nativeAssembly.container!=='CFB/OLE')throw new Error('SLDASM: CFB signature not recognized');
+console.log('SLDASM adapter',JSON.stringify({components:sw.nativeAssembly.componentCount,occurrences:sw.nativeAssembly.occurrenceCount,bom:[...bom]},null,2));
+console.log('All v0.4.1 Drawing Core + SLDASM Adapter tests passed.');

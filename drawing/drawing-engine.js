@@ -88,7 +88,7 @@ export function renderDrawing(svg,drawing,options={}){
 
   if(mode.notes) s+=renderNotes(drawing,{x:55,y:598,w:640,h:50},colors);
   s+=renderTitleBlock({projectName,fileName,unit:drawing.unit,mode:mode.label,rec:drawing.rec},{x:720,y:610,w:440,h:112},colors);
-  s+=`<text x="55" y="715" fill="${colors.muted}" font-family="system-ui,-apple-system,sans-serif" font-size="11">ROZFOOD ENGINEERING STUDIO · Drawing Core v0.4.0 · геометрия STEP обрабатывается локально</text>`;
+  s+=`<text x="55" y="715" fill="${colors.muted}" font-family="system-ui,-apple-system,sans-serif" font-size="11">ROZFOOD ENGINEERING STUDIO · Drawing Core v0.4.1 · геометрия STEP обрабатывается локально</text>`;
   svg.innerHTML=s;
 }
 
@@ -238,7 +238,7 @@ function renderTitleBlock(meta,box,c){
   s+=`<text x="${split+10}" y="${y+48}" fill="${c.muted}" stroke="none" font-family="system-ui" font-size="9">ЕДИНИЦЫ</text><text x="${x+w-10}" y="${y+48}" text-anchor="end" fill="${c.ink}" stroke="none" font-family="ui-monospace" font-size="11" font-weight="700">${escapeXml(meta.unit)}</text>`;
   s+=`<text x="${split+10}" y="${y+67}" fill="${c.muted}" stroke="none" font-family="system-ui" font-size="9">МАСШТАБ</text><text x="${x+w-10}" y="${y+67}" text-anchor="end" fill="${c.ink}" stroke="none" font-family="ui-monospace" font-size="11">AUTO</text>`;
   s+=`<text x="${split+10}" y="${y+86}" fill="${c.muted}" stroke="none" font-family="system-ui" font-size="9">СТАТУС</text><text x="${x+w-10}" y="${y+86}" text-anchor="end" fill="${c.blue}" stroke="none" font-family="system-ui" font-size="10" font-weight="700">AUTO / VERIFY</text>`;
-  s+=`<text x="${split+10}" y="${y+104}" fill="${c.muted}" stroke="none" font-family="system-ui" font-size="8.5">Drawing Core v0.4.0</text></g>`;
+  s+=`<text x="${split+10}" y="${y+104}" fill="${c.muted}" stroke="none" font-family="system-ui" font-size="8.5">Drawing Core v0.4.1</text></g>`;
   return s;
 }
 

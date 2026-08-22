@@ -1,28 +1,38 @@
-# Architecture
+# ROZFOOD Engineering Studio v0.7.0 architecture
 
-## import/step-parser.js
-Детерминированный парсер ISO-10303-21. Превращает STEP DATA section в Map entities и индекс byType.
+## Import layer
 
-## recognition/feature-recognizer.js
-Извлекает B-Rep геометрию, поверхности, точные габариты, цилиндры, PCD и assembly occurrences. Применяет `ITEM_DEFINED_TRANSFORMATION` к инстансам деталей.
+`import/sldasm-adapter.js`
 
-## drawing/drawing-engine.js
-Преобразует Recognition Model в базовый технический лист SVG. Следующий этап: проекции, скрытые линии, разрезы, размерные стратегии.
+- SLDASM-only gate
+- modern SolidWorks chunk-stream parser
+- ROL stream-name codec
+- raw-deflate decompression
+- COMPINSTANCETREE XML decoder
+- FaceTessellations triangle-strip decoder
 
-## viewer/wireframe-viewer.js
-Локальный Canvas 3D viewer без CDN. Использует геометрические EDGE_CURVE и assembly transforms.
+`import-worker.js`
 
-## import-worker.js
-Запускает STEP parsing и recognition вне UI thread.
+- isolates parsing from UI thread
+- returns recognition record, assembly metadata and mesh bounds
 
-## app.js
-UI orchestration. Не содержит CAD-математику.
+## Visualization
 
-## Следующие ядра
+`viewer/wireframe-viewer.js`
 
-1. Tessellation Core — точный shaded mesh из B-Rep.
-2. Feature Recognition 2 — отверстия, фаски, скругления, карманы, ступени, резьбовые кандидаты.
-3. Projection Core — front/top/right/section views + hidden line removal.
-4. Dimension Strategy — базовые/цепные/ординатные размеры и удаление дубликатов.
-5. AP242 PMI Core — semantic dimensions/GD&T, когда они реально присутствуют в STEP.
-6. Native SolidWorks/Parasolid Adapter — отдельный импортный модуль.
+- Canvas 2D projected 3D viewer
+- filled triangle mode (`Объём`)
+- batched triangle-edge mode (`Каркас`)
+- pointer rotation and wheel zoom
+- requestAnimationFrame throttling for large meshes
+
+## Drawing/BOM
+
+`drawing/drawing-engine.js`
+
+- detailed assembly/BOM sheet remains available from the decoded component tree
+- exact engineering projections from native SLDASM are intentionally blocked until a B-Rep layer exists
+
+## Data honesty rule
+
+FaceTessellations are labelled as TESS geometry. They are never presented as exact B-Rep/feature dimensions.

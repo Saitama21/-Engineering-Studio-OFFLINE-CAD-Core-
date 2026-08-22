@@ -33,7 +33,7 @@ async function importFile(file){
   $('#projectName').textContent=fileName.replace(/\.[^.]+$/,'');
   $('#fileMeta').textContent=`${fileName} · ${(fileSize/1024).toFixed(1)} KB · локально`;
   const buffer=await file.arrayBuffer();
-  log(`Импорт ${fileName}: нативный SLDASM reference scan · ${(fileSize/1024).toFixed(1)} KB.`);
+  log(`Импорт ${fileName}: SLDASM Native Tessellation decoder · ${(fileSize/1024).toFixed(1)} KB.`);
   worker.postMessage({kind:'sldasm',buffer,fileName},[buffer]);
 }
 
@@ -42,37 +42,40 @@ worker.onmessage=e=>{
   setBusy(false);if(!e.data.ok){log('Ошибка: '+e.data.error);alert(e.data.error);return}
   Object.assign(state,e.data);renderAll();
   const n=state.rec.nativeAssembly;
-  log(`SLDASM готов: ${n.componentCount} позиций · ${n.occurrenceCount} вхождений · ${n.container}. Интернет не использовался.`);
-  switchTab('assembly');
+  if(n?.root)$('#projectName').textContent=n.root;
+  const geo=state.rec.geometryAvailable!==false;
+  log(`SLDASM готов: ${n.componentCount} позиций · ${n.occurrenceCount} вхождений · ${n.faceBlocks||0} tess-блоков · ${n.triangles||0} треугольников. Интернет не использовался.`);
+  switchTab(geo?'model':'assembly');
 };
 
 function setEmptyView(title,text){const root=$('#emptyView');root.querySelector('b').textContent=title;root.querySelector('span').textContent=text;root.style.display='grid'}
 function renderAll(){
   const r=state.rec,d=state.dimensions||[],geo=r.geometryAvailable!==false;
-  if(geo){viewer.setModel(r);$('#emptyView').style.display='none'}else{viewer.clear();setEmptyView('SLDASM сборка прочитана',`${r.nativeAssembly?.componentCount||0} позиций · BOM доступен во вкладке «Сборка». Нативная 3D-геометрия SLDASM пока не декодируется.`)}
+  if(geo){viewer.setModel(r);$('#emptyView').style.display='none'}else{viewer.clear();setEmptyView('SLDASM сборка прочитана',`${r.nativeAssembly?.componentCount||0} позиций · BOM доступен во вкладке «Сборка». В этом файле не найдена декодируемая встроенная FaceTessellations-геометрия.`)}
   $('#exportBtn').disabled=false;
-  $('#entityCount').textContent=geo?`${r.counts.entities} entities`:`${r.nativeAssembly?.componentCount||0} компонентов`;
+  $('#entityCount').textContent=geo?`${r.counts.tessFaceBlocks||0} tess faces`:`${r.nativeAssembly?.componentCount||0} компонентов`;
   $('#sx').textContent=geo?fmt(r.bounds.size[0])+' mm':'—';$('#sy').textContent=geo?fmt(r.bounds.size[1])+' mm':'—';$('#sz').textContent=geo?fmt(r.bounds.size[2])+' mm':'—';
-  $('#solidCount').textContent=geo?r.counts.solids:'—';$('#faceCount').textContent=geo?(r.counts.sceneFaces??r.counts.faces):'—';$('#edgeCount').textContent=geo?(r.counts.sceneEdges??r.counts.edges):'—';
-  $('#unitLabel').textContent=geo?r.unit:'—';$('#unitFactor').textContent=geo?fmt(r.factor):'—';$('#cylinderCount').textContent=geo?r.counts.cylinders:'—';$('#bsplineCount').textContent=geo?r.counts.bsplines:'—';
-  const conf=d.length?Math.round(d.reduce((s,x)=>s+x.confidence,0)/d.length*100):0;$('#confidence').textContent=geo?(conf+'%'):'META';
-  renderTree();renderFeatures();renderDimensions();renderAssembly();updateDrawingModeAvailability();renderCurrentDrawing();$('#exportDrawingBtn').disabled=!r;
+  $('#solidCount').textContent=geo?'TESS':'—';$('#faceCount').textContent=geo?(r.counts.triangles??r.counts.sceneFaces??r.counts.faces):'—';$('#edgeCount').textContent=geo?(r.counts.sceneEdges??r.counts.edges):'—';
+  $('#unitLabel').textContent=geo?r.unit:'—';$('#unitFactor').textContent=geo?fmt(r.factor):'—';$('#cylinderCount').textContent=geo?(r.counts.tessFaceBlocks||0):'—';$('#bsplineCount').textContent=geo?(r.counts.vertices||0):'—';
+  const conf=d.length?Math.round(d.reduce((s,x)=>s+x.confidence,0)/d.length*100):0;$('#confidence').textContent=geo?(conf+'% TESS'):'META';
+  if(geo)$('#selectionInfo').textContent='FaceTessellations · вращайте модель';renderTree();renderFeatures();renderDimensions();renderAssembly();updateDrawingModeAvailability();renderCurrentDrawing();$('#exportDrawingBtn').disabled=!r;
 }
 
 function renderCurrentDrawing(){
   if(!state.rec)return;
-  if(state.rec.geometryAvailable===false){
-    const n=state.rec.nativeAssembly;
-    if(state.drawingMode==='assemblyDetailed'){
-      const projectName=$('#projectName')?.textContent||state.fileName?.replace(/\.[^.]+$/,'')||n?.root||'SLDASM';
-      renderNativeAssemblyDrawing($('#drawingSvg'),n,{projectName,fileName:state.fileName,theme:document.documentElement.dataset.theme});
-      return;
-    }
-    $('#drawingSvg').setAttribute('viewBox','0 0 1200 760');$('#drawingSvg').innerHTML=`<rect width="1200" height="760" fill="${document.documentElement.dataset.theme==='dark'?'#0d1522':'#fff'}"/><g font-family="-apple-system,BlinkMacSystemFont,system-ui" text-anchor="middle"><text x="600" y="285" font-size="36" font-weight="700" fill="${document.documentElement.dataset.theme==='dark'?'#f4f7fb':'#17202b'}">SLDASM: структура сборки импортирована</text><text x="600" y="340" font-size="22" fill="#6e7781">${esc(n?.componentCount||0)} позиций · ${esc(n?.occurrenceCount||0)} вхождений</text><text x="600" y="390" font-size="18" fill="#6e7781">Для BOM-листа выберите режим «Сборочный детализированный».</text><text x="600" y="430" font-size="18" fill="#6e7781">Геометрические проекции появятся после подключения нативного SLDASM geometry decoder.</text></g>`;return;
+  const r=state.rec,n=r.nativeAssembly;
+  if(state.drawingMode==='assemblyDetailed'){
+    const projectName=$('#projectName')?.textContent||state.fileName?.replace(/\.[^.]+$/,'')||n?.root||'SLDASM';
+    renderNativeAssemblyDrawing($('#drawingSvg'),n,{projectName,fileName:state.fileName,theme:document.documentElement.dataset.theme});
+    return;
   }
-  const projectName=$('#projectName')?.textContent||state.fileName?.replace(/\.[^.]+$/,'')||'Новая модель';
-  const drawing=drawingFromRecognition(state.rec,state.dimensions,{projectName,fileName:state.fileName,mode:state.drawingMode});
-  renderDrawing($('#drawingSvg'),drawing,{mode:state.drawingMode,projectName,fileName:state.fileName,theme:document.documentElement.dataset.theme});
+  if(r.tessellation?.mode==='triangle-strips'){
+    const dark=document.documentElement.dataset.theme==='dark',bg=dark?'#0d1522':'#fff',fg=dark?'#f4f7fb':'#17202b',muted='#6e7781';
+    $('#drawingSvg').setAttribute('viewBox','0 0 1200 760');
+    $('#drawingSvg').innerHTML=`<rect width="1200" height="760" fill="${bg}"/><g font-family="-apple-system,BlinkMacSystemFont,system-ui" text-anchor="middle"><text x="600" y="260" font-size="34" font-weight="700" fill="${fg}">3D SLDASM загружен из FaceTessellations</text><text x="600" y="320" font-size="21" fill="${muted}">${esc(n?.faceBlocks||0)} tess-блоков · ${esc(n?.triangles||0)} треугольников</text><text x="600" y="380" font-size="18" fill="${muted}">Тесселяция предназначена для точного отображения формы.</text><text x="600" y="420" font-size="18" fill="${muted}">Инженерные проекции, отверстия, радиусы и допуски потребуют следующего B-Rep слоя.</text><text x="600" y="480" font-size="18" fill="${muted}">Сборочный BOM уже доступен в режиме «Сборочный детализированный».</text></g>`;
+    return;
+  }
+  $('#drawingSvg').setAttribute('viewBox','0 0 1200 760');$('#drawingSvg').innerHTML=`<rect width="1200" height="760" fill="${document.documentElement.dataset.theme==='dark'?'#0d1522':'#fff'}"/><g font-family="-apple-system,BlinkMacSystemFont,system-ui" text-anchor="middle"><text x="600" y="285" font-size="36" font-weight="700" fill="${document.documentElement.dataset.theme==='dark'?'#f4f7fb':'#17202b'}">SLDASM: структура сборки импортирована</text><text x="600" y="340" font-size="22" fill="#6e7781">${esc(n?.componentCount||0)} позиций · ${esc(n?.occurrenceCount||0)} вхождений</text><text x="600" y="400" font-size="18" fill="#6e7781">Встроенная FaceTessellations-геометрия в этом файле не найдена.</text></g>`;
 }
 
 function updateDrawingModeAvailability(){
@@ -85,27 +88,37 @@ function updateDrawingModeAvailability(){
 
 function renderTree(){
   const r=state.rec,n=r.nativeAssembly;
-  const rows=[['Файл',state.fileName],['Формат','SLDASM'],['Адаптер','Native Reference v0.2'],['Контейнер',n.container],['Позиций',n.componentCount],['Вхождений',n.occurrenceCount],['CFB streams',n.directoryNames?.length||0]];
+  const rows=[['Файл',state.fileName],['Формат','SLDASM'],['Адаптер','Native Tessellation v0.7'],['Контейнер',n.container],['Streams',n.streamCount||0],['Позиций',n.componentCount],['Вхождений',n.occurrenceCount],['Tess-блоков',n.faceBlocks||0],['Треугольников',n.triangles||0]];
   $('#treeBody').classList.remove('empty');
   $('#treeBody').innerHTML=rows.map(([a,b])=>`<div class="tree-row"><b>${esc(a)}</b><span>${esc(b)}</span></div>`).join('');
 }
 
+
 function renderFeatures(){
-  const n=state.rec.nativeAssembly;
+  const r=state.rec,n=r.nativeAssembly,geo=r.geometryAvailable!==false;
   $('#featureList').classList.remove('empty');
-  $('#featureList').innerHTML=`<div class="feature"><i>☷</i><div>SLDASM reference map<small>${esc(n?.componentCount||0)} компонентов · офлайн</small></div><strong>OK</strong></div><div class="feature"><i>⌁</i><div>3D геометрия<small>native geometry decoder ещё не подключён</small></div><strong>—</strong></div>`;
+  $('#featureList').innerHTML=`<div class="feature"><i>☷</i><div>SLDASM component tree<small>${esc(n?.componentCount||0)} позиций · ${esc(n?.occurrenceCount||0)} вхождений</small></div><strong>OK</strong></div><div class="feature"><i>△</i><div>3D FaceTessellations<small>${geo?`${esc(n?.faceBlocks||0)} блоков · ${esc(n?.triangles||0)} треугольников`:'встроенная тесселяция не найдена'}</small></div><strong>${geo?'OK':'—'}</strong></div><div class="feature"><i>◎</i><div>Точный B-Rep<small>Parasolid feature topology ещё не декодируется</small></div><strong>—</strong></div>`;
 }
+
 
 function renderDimensions(){
-  $('#dimensionCards').classList.add('empty');
-  $('#dimensionCards').textContent='Размеры появятся после подключения нативного декодера геометрии SLDASM.';
-  $('#dimensionsTable').innerHTML='<tr><td colspan="4">Структура SLDASM импортирована. Геометрические размеры пока недоступны без native geometry decoder.</td></tr>';
+  const r=state.rec,d=state.dimensions||[];
+  if(r.geometryAvailable!==false&&d.length){
+    $('#dimensionCards').classList.remove('empty');
+    $('#dimensionCards').innerHTML=d.map(x=>`<div class="dim-card"><span>${esc(x.label)}</span><b>${fmt(x.value)} ${esc(x.unit||'mm')}</b><small>габарит по тесселяции</small></div>`).join('');
+    $('#dimensionsTable').innerHTML=d.map(x=>`<tr><td>${esc(x.type)}</td><td>${esc(x.label)}</td><td>${fmt(x.value)} ${esc(x.unit||'mm')}</td><td>${Math.round((x.confidence||0)*100)}% · TESS</td></tr>`).join('');
+  }else{
+    $('#dimensionCards').classList.add('empty');$('#dimensionCards').textContent='Встроенная геометрия не найдена — габариты недоступны.';
+    $('#dimensionsTable').innerHTML='<tr><td colspan="4">Для точных технологических размеров нужен B-Rep слой; v0.7.0 показывает габариты из встроенной тесселяции.</td></tr>';
+  }
 }
 
+
 function renderAssembly(){
-  const r=state.rec,root=$('#assemblyBody'),n=r.nativeAssembly,components=n.components||[];
-  root.innerHTML=`<div class="assembly-head"><div><h3>${esc(n.root)} · SLDASM</h3><p class="hint">Native Reference Adapter v0.2 · ${esc(n.container)} · полностью локально</p></div><span class="adapter-badge">SLDASM</span></div><div class="assembly-grid"><section><h4>Дерево компонентов</h4><ul class="component-tree"><li><b>▾ ${esc(n.root)}</b><ul>${components.map(c=>`<li><span>${c.type==='assembly'?'▣':'◫'} ${esc(c.name)}</span><em>×${c.count}</em><small>${esc(c.file)}</small></li>`).join('')||'<li class="muted">Ссылки компонентов не извлечены из этого контейнера</li>'}</ul></li></ul></section><section><h4>BOM · ${components.length} позиций</h4><div class="bom bom-wide"><div class="head">№</div><div class="head">Компонент</div><div class="head">Кол-во</div>${components.map((c,i)=>`<div>${i+1}</div><div><b>${esc(c.name)}</b><small>${esc(c.file)} · ${c.type==='assembly'?'подсборка':'деталь'}</small></div><div>${c.count}</div>`).join('')}</div></section></div><div class="assembly-actions"><button data-open-assembly-drawing>Открыть сборочный чертёж</button></div><div class="native-note"><b>Текущий уровень:</b> SLDASM распознаётся локально, строится reference map и BOM, когда ссылки доступны в контейнере. <b>3D:</b> нативная геометрия SolidWorks пока не декодируется; для неё будет отдельный SLDASM geometry decoder.</div>`;
+  const r=state.rec,root=$('#assemblyBody'),n=r.nativeAssembly,components=n.components||[],geo=r.geometryAvailable!==false;
+  root.innerHTML=`<div class="assembly-head"><div><h3>${esc(n.root)} · SLDASM</h3><p class="hint">Native Tessellation Decoder v0.7 · ${esc(n.container)} · полностью локально</p></div><span class="adapter-badge">SLDASM</span></div><div class="assembly-grid"><section><h4>Дерево компонентов</h4><ul class="component-tree"><li><b>▾ ${esc(n.root)}</b><ul>${components.map(c=>`<li><span>${c.type==='assembly'?'▣':'◫'} ${esc(c.name)}</span><em>×${c.count}</em><small>${esc(c.file)}</small></li>`).join('')||'<li class="muted">Компоненты не извлечены из этого контейнера</li>'}</ul></li></ul></section><section><h4>BOM · ${components.length} позиций</h4><div class="bom bom-wide"><div class="head">№</div><div class="head">Компонент</div><div class="head">Кол-во</div>${components.map((c,i)=>`<div>${i+1}</div><div><b>${esc(c.name)}</b><small>${esc(c.file)} · ${c.type==='assembly'?'подсборка':'деталь'}</small></div><div>${c.count}</div>`).join('')}</div></section></div><div class="assembly-actions"><button data-open-assembly-drawing>Открыть сборочный чертёж</button></div><div class="native-note"><b>v0.7.0:</b> структура/BOM читаются из нативных потоков SLDASM. <b>3D:</b> ${geo?`построено из встроенных FaceTessellations (${esc(n.faceBlocks||0)} блоков / ${esc(n.triangles||0)} треугольников).`:'встроенная тесселяция в файле не найдена.'} Это графическая геометрия SolidWorks; точный Parasolid B-Rep остаётся отдельным следующим слоем.</div>`;
 }
+
 
 
 $('#assemblyBody').addEventListener('click',e=>{const comp=e.target.closest('[data-component-id]');if(comp){viewer.setSelectedComponent(comp.dataset.componentId);switchTab('model');$('#selectionInfo').textContent=`выбрано: ${comp.querySelector('span')?.textContent?.replace(/^◫\s*/,'')||'компонент'}`;log('Выбран компонент 3D: '+($('#selectionInfo').textContent.replace('выбрано: ',''))+'.');return;}const btn=e.target.closest('[data-open-assembly-drawing]');if(!btn)return;state.drawingMode='assemblyDetailed';$$('[data-drawing-mode]').forEach(x=>x.classList.toggle('active',x.dataset.drawingMode==='assemblyDetailed'));switchTab('drawing');renderCurrentDrawing();log('Открыт режим: Сборочный детализированный.');});
@@ -117,7 +130,7 @@ $('#themeToggle').addEventListener('click',()=>applyTheme(document.documentEleme
 $('#fitBtn').addEventListener('click',()=>viewer.fit());$('#solidBtn').addEventListener('click',()=>{viewer.setMode('solid');$('#solidBtn').classList.add('active');$('#wireBtn').classList.remove('active');});$('#wireBtn').addEventListener('click',()=>{viewer.setMode('wire');$('#wireBtn').classList.add('active');$('#solidBtn').classList.remove('active');});$('#clearLog').addEventListener('click',()=>$('#logBody').innerHTML='');
 $('#fileInput').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;await importFile(f);e.target.value=''})
 const drop=$('#dropZone');['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('drag')}));['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('drag')}));drop.addEventListener('drop',async e=>{const f=e.dataTransfer.files[0];if(f)await importFile(f)});
-$('#exportBtn').addEventListener('click',()=>{if(!state.rec)return;const report={version:'0.6.2',generated:new Date().toISOString(),file:state.fileName,drawingMode:state.drawingMode,counts:state.rec.counts,bounds:state.rec.bounds,dimensions:state.dimensions,boltPatterns:state.rec.boltPatterns,products:state.rec.products,occurrences:state.rec.occurrences,nativeAssembly:state.rec.nativeAssembly||null};const blob=new Blob([JSON.stringify(report,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(state.fileName||'model').replace(/\.[^.]+$/,'')+'-engineering-report.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)});
+$('#exportBtn').addEventListener('click',()=>{if(!state.rec)return;const report={version:'0.7.0',generated:new Date().toISOString(),file:state.fileName,drawingMode:state.drawingMode,counts:state.rec.counts,bounds:state.rec.bounds,dimensions:state.dimensions,boltPatterns:state.rec.boltPatterns,products:state.rec.products,occurrences:state.rec.occurrences,nativeAssembly:state.rec.nativeAssembly||null};const blob=new Blob([JSON.stringify(report,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(state.fileName||'model').replace(/\.[^.]+$/,'')+'-engineering-report.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)});
 $('#exportDrawingBtn').addEventListener('click',()=>{if(!state.rec)return;renderCurrentDrawing();const svg=serializeDrawing($('#drawingSvg'));const blob=new Blob([svg],{type:'image/svg+xml;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(state.fileName||'model').replace(/\.[^.]+$/,'')+'-drawing-'+state.drawingMode+'.svg';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);log('Чертёж экспортирован в SVG локально.');});
 function esc(x){return String(x??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 initTheme();

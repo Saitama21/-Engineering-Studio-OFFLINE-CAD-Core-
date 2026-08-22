@@ -1,10 +1,29 @@
-# Test report · v0.6.2 SLDASM Only
+# Test report · v0.7.0 SLDASM Native Tessellation
 
-- SLDASM-only import worker: PASS
-- CFB/OLE signature detection: PASS
-- Reference extraction/BOM synthetic fixture: PASS
-- Detailed assembly BOM drawing: PASS
-- UI input filter accepts only `.SLDASM`: PASS
-- Service Worker cache bumped to v0.6.2: PASS
+## Automated synthetic test
 
-Пользовательский файл `Сборка_Барабана_Глобино….SLDASM` распознаётся как нативный SolidWorks binary container. В текущем reference-level адаптере из этого конкретного файла ссылки компонентов строковым сканированием не извлеклись; это задача следующего native geometry/reference decoder.
+- SLDASM-only input policy: PASS
+- Modern chunk container detection: PASS
+- ROL stream-name decode: PASS
+- raw-deflate stream decompression: PASS
+- COMPINSTANCETREE parse: PASS
+- BOM grouping: PASS
+- FaceTessellations face-block parse: PASS
+- triangle-strip reconstruction: PASS
+- meters → millimeters conversion: PASS
+- mesh bounds: PASS
+- assembly BOM SVG: PASS
+- standalone SLDPRT rejection: PASS
+
+## External real-file validation
+
+- geometryAvailable: PASS
+- BOM positions: 17
+- occurrences: 31
+- stream records: 68
+- tessellation face blocks: 117
+- vertices: 20 652
+- triangles: 16 926
+- bounds: 1271.763 × 663.000 × 476.000 mm
+
+The external validation file is not included in the distribution.

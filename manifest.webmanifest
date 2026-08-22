@@ -5,7 +5,7 @@
   "display": "standalone",
   "background_color": "#f5f7fa",
   "theme_color": "#ffffff",
-  "description": "Offline STEP 3D + native SLDASM assembly intake, drawing core and detailed assembly BOM",
+  "description": "Offline native SLDASM assembly intake, structure/BOM analysis and detailed assembly drawing",
   "icons": [
     {
       "src": "icons/icon-192.png",

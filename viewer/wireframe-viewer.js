@@ -39,7 +39,7 @@ export class WireframeViewer{
   draw(){
     const c=this.ctx,w=this.canvas.clientWidth||1,h=this.canvas.clientHeight||1,bg=themeColor('--canvas-bg','#fff'),grid=themeColor('--canvas-grid','#edf1f5'),wire=themeColor('--wire','#2a3340'),circle=themeColor('--wire-circle','#0a67ff'),muted=themeColor('--muted','#6e7781');
     c.clearRect(0,0,w,h);c.fillStyle=bg;c.fillRect(0,0,w,h);c.strokeStyle=grid;c.lineWidth=1;for(let x=0;x<w;x+=40){c.beginPath();c.moveTo(x,0);c.lineTo(x,h);c.stroke()}for(let y=0;y<h;y+=40){c.beginPath();c.moveTo(0,y);c.lineTo(w,y);c.stroke()}
-    if(!this.rec){c.fillStyle=muted;c.font='14px -apple-system,BlinkMacSystemFont,system-ui';c.fillText('Загрузите STEP/STP',24,36);return}
+    if(!this.rec){c.fillStyle=muted;c.font='14px -apple-system,BlinkMacSystemFont,system-ui';c.fillText('Загрузите SLDASM',24,36);return}
     const b=this.rec.bounds,max=Math.max(...b.size,1),scale=Math.min(w,h)*.72/max,cx=w/2+this.pan[0],cy=h/2+this.pan[1],center=b.center;
     if(this.mode==='solid'&&(this.rec.faces?.length||0))this.drawFaces(c,scale,cx,cy,center);else this.hitFaces=[];
     const segs=[];for(const e of this.rec.edges||[]){const pts=e.points?.length?e.points:(e.p1&&e.p2?[e.p1,e.p2]:[]);for(let i=0;i<pts.length-1;i++){const a=this.project(pts[i],scale,cx,cy,center),bb=this.project(pts[i+1],scale,cx,cy,center);segs.push([a,bb,(a[2]+bb[2])/2,e])}}

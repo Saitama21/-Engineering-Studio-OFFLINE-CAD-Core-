@@ -1,35 +1,10 @@
-# Test report · ROZFOOD ENGINEERING STUDIO v0.6.1
+# Test report · v0.6.2 SLDASM Only
 
-## Automated regression
+- SLDASM-only import worker: PASS
+- CFB/OLE signature detection: PASS
+- Reference extraction/BOM synthetic fixture: PASS
+- Detailed assembly BOM drawing: PASS
+- UI input filter accepts only `.SLDASM`: PASS
+- Service Worker cache bumped to v0.6.2: PASS
 
-`npm test` — PASS.
-
-Проверены:
-
-- `sample_flange.step`: B-Rep, Ø, PCD, размеры, разрез;
-- `sample_shaft.step`: ступени, диаметры, продольный вид и разрез;
-- `sample_assembly.step`: 5 assembly occurrences, правильные габариты после трансформаций, сборочный BOM;
-- SLDASM reference adapter: CFB/OLE, ссылки, количества, BOM;
-- SVG title block и режим «Сборочный детализированный».
-
-## Real STEP validation
-
-Файл: `Сборка_Барабана_Глобино_….STEP` (пользовательский файл, не включён в сборку).
-
-Результат локального парсинга:
-
-- entities: 8 286;
-- PRODUCT: 18;
-- NEXT_ASSEMBLY_USAGE_OCCURRENCE: 31;
-- displayed components: 28;
-- scene edges: 610;
-- scene faces: 450;
-- planes in instances: 176;
-- cylinders in instances: 138;
-- cones in instances: 98;
-- B-Spline curve definitions: 75;
-- scene bounds: 475.999995 × 1225.000000 × 475.999987 mm.
-
-Распознано имя корневого продукта: `Сборка Барабана Глобино`.
-
-Статус: PASS для Import & Visualization Core v0.6.1.
+Пользовательский файл `Сборка_Барабана_Глобино….SLDASM` распознаётся как нативный SolidWorks binary container. В текущем reference-level адаптере из этого конкретного файла ссылки компонентов строковым сканированием не извлеклись; это задача следующего native geometry/reference decoder.

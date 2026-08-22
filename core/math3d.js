@@ -16,7 +16,7 @@ export function rotatePoint(p, rx, ry) {
   [x,z]=[x*cy+z*sy,-x*sy+z*cy]; [y,z]=[y*cx-z*sx,y*sx+z*cx]; return [x,y,z];
 }
 
-// Rigid transforms used by the STEP assembly import. A transform maps p -> R*p + t.
+// Shared 3D math helpers retained for the viewer and future native SLDASM geometry decoder.
 export const identityTransform=()=>({R:[[1,0,0],[0,1,0],[0,0,1]],t:[0,0,0]});
 export function placementTransform(pl={origin:[0,0,0],axis:[0,0,1],refdir:[1,0,0]}){
   const b=basis(pl.axis,pl.refdir),o=pl.origin||[0,0,0];

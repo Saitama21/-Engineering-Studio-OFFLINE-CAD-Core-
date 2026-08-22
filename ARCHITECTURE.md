@@ -1,38 +1,15 @@
-# ROZFOOD Engineering Studio v0.7.0 architecture
+# ROZFOOD Engineering Studio v0.7.1 architecture
 
-## Import layer
+`SLDASM → Native Streams → COMPINSTANCETREE + FaceTessellations → Model/Tess mapping → Occurrence transforms → 3D scene → BOM / Drawing`
 
-`import/sldasm-adapter.js`
+## Import pipeline
 
-- SLDASM-only gate
-- modern SolidWorks chunk-stream parser
-- ROL stream-name codec
-- raw-deflate decompression
-- COMPINSTANCETREE XML decoder
-- FaceTessellations triangle-strip decoder
+1. `sldasm-adapter.js` декодирует SolidWorks 2015+ chunk container.
+2. `COMPINSTANCETREE` даёт модели, BOM, вложенность и `swTransform`.
+3. `FaceTessellations/*` декодируются в локальные triangle-strip templates.
+4. Локальные шаблоны сопоставляются с leaf-моделями по `swBoundingBox`, порядку моделей и границам tess-потоков.
+5. Матрицы вхождений накапливаются в row-vector convention: `local × parentWorld`.
+6. Каждая копия детали переносится в мировые координаты и получает `componentId`.
+7. Viewer сортирует треугольники по глубине, поддерживает solid/wireframe и выбор детали.
 
-`import-worker.js`
-
-- isolates parsing from UI thread
-- returns recognition record, assembly metadata and mesh bounds
-
-## Visualization
-
-`viewer/wireframe-viewer.js`
-
-- Canvas 2D projected 3D viewer
-- filled triangle mode (`Объём`)
-- batched triangle-edge mode (`Каркас`)
-- pointer rotation and wheel zoom
-- requestAnimationFrame throttling for large meshes
-
-## Drawing/BOM
-
-`drawing/drawing-engine.js`
-
-- detailed assembly/BOM sheet remains available from the decoded component tree
-- exact engineering projections from native SLDASM are intentionally blocked until a B-Rep layer exists
-
-## Data honesty rule
-
-FaceTessellations are labelled as TESS geometry. They are never presented as exact B-Rep/feature dimensions.
+Все вычисления выполняются в браузере локально.

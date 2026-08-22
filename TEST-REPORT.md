@@ -1,29 +1,25 @@
-# Test report · v0.7.0 SLDASM Native Tessellation
+# Test report · v0.7.1 SLDASM Assembly Transforms
 
-## Automated synthetic test
+## Synthetic transform test
 
-- SLDASM-only input policy: PASS
-- Modern chunk container detection: PASS
-- ROL stream-name decode: PASS
-- raw-deflate stream decompression: PASS
-- COMPINSTANCETREE parse: PASS
-- BOM grouping: PASS
-- FaceTessellations face-block parse: PASS
-- triangle-strip reconstruction: PASS
-- meters → millimeters conversion: PASS
-- mesh bounds: PASS
-- assembly BOM SVG: PASS
-- standalone SLDPRT rejection: PASS
+PASS:
+- `.SLDASM` принят;
+- `.SLDPRT` отклонён;
+- локальная плоскость 100×100 мм с translation `(200,300,400)` мм оказалась в ожидаемых мировых координатах;
+- `componentId` присвоен сценовым треугольникам;
+- Drawing Core маркирован v0.7.1.
 
-## External real-file validation
+## Real SLDASM validation
 
-- geometryAvailable: PASS
-- BOM positions: 17
-- occurrences: 31
-- stream records: 68
-- tessellation face blocks: 117
-- vertices: 20 652
-- triangles: 16 926
-- bounds: 1271.763 × 663.000 × 476.000 mm
+Файл: `Сборка Барабана Глобино.SLDASM`
 
-The external validation file is not included in the distribution.
+PASS:
+- 17 BOM-позиций;
+- 31 вхождение;
+- 14/14 leaf-моделей сопоставлены;
+- 28 leaf-вхождений размещены;
+- 117 tess-блоков;
+- 16 926 исходных triangles;
+- 25 962 scene triangles;
+- итоговый bounding box ≈ 476 × 1225 × 476 мм;
+- длинная локальная ось/вал больше не остаётся в локальной X-ориентации: матрица сборки применена.

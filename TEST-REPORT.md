@@ -1,48 +1,13 @@
-# Test Report — v0.3.0
+# Test report · ROZFOOD ENGINEERING STUDIO v0.4.0
 
-Дата: 2026-08-22
-
-## Автоматические Node tests
+Дата сборки: 2026-08-22
 
 `npm test` — PASS.
 
-### sample_flange.step
-- 762 STEP entities
-- 1 solid
-- 10 faces
-- 24 edges
-- bounding box: 80.000 × 80.000 × 12.000 mm
-- recognized diameters: Ø80, Ø20, Ø6 × 6
-- recognized PCD: Ø60.000, 6 × Ø6.000
+Проверено:
 
-### sample_shaft.step
-- 298 STEP entities
-- 1 solid
-- 7 faces
-- 9 edges
-- bounding box: 36.000 × 36.000 × 90.000 mm
-- recognized diameters: Ø36, Ø30, Ø20
-
-### sample_assembly.step
-- 521 STEP entities
-- 2 unique B-Rep definitions
-- 5 assembly occurrences
-- ITEM_DEFINED_TRANSFORMATION applied to component instances
-- bounding box: 80.000 × 50.000 × 45.000 mm
-- four repeated Ø8 cylindrical components recognized in transformed positions
-
-## Syntax tests
-
-`node --check` PASS:
-- app.js
-- import-worker.js
-- import/step-parser.js
-- recognition/feature-recognizer.js
-- viewer/wireframe-viewer.js
-- drawing/drawing-engine.js
-
-## Browser E2E
-
-Не выполнен в текущем build-container: установленный Chromium блокирует локальные `http://127.0.0.1`, container IP и `file://` политикой `ERR_BLOCKED_BY_ADMINISTRATOR`. Это ограничение среды тестирования, не заявляется как PASS.
-
-Перед production deployment всё равно нужно прогнать Safari iOS / Chrome desktop на реальном HTTPS host.
+- sample_flange.step: 80×80×12 mm, 6×Ø6, PCD Ø60, главный вид XY, A–A создан.
+- sample_shaft.step: 36×36×90 mm, Ø36/Ø30/Ø20, длины ступеней 30/35/25 mm, главный вид XZ, A–A создан.
+- sample_assembly.step: 80×50×45 mm, 5 instances, assembly recognition сохранён.
+- SVG smoke render содержит бренд ROZFOOD ENGINEERING STUDIO, версию Drawing Core v0.4.0 и PCD-аннотацию для фланца.
+- Синтаксис `app.js`, `drawing/drawing-engine.js`, `recognition/feature-recognizer.js` проверен `node --check`.

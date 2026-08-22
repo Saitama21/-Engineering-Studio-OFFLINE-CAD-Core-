@@ -176,5 +176,15 @@ export function makeDimensionSet(rec){
   for(const [diam,count] of [...cylGroups.entries()].sort((a,b)=>b[0]-a[0])) d.push({type:'diameter',label:`Ø${diam.toFixed(3)}${count>1?` × ${count}`:''}`,value:diam,unit:'mm',count,confidence:0.95});
   for(const p of rec.boltPatterns) d.push({type:'pcd',label:`PCD Ø${p.pcd.toFixed(3)} · ${p.count}×Ø${p.holeDiameter.toFixed(3)}`,value:p.pcd,unit:'mm',count:p.count,holeDiameter:p.holeDiameter,confidence:0.92});
   for(const s of rec.surfaces.filter(s=>s.type==='CONICAL_SURFACE')) d.push({type:'angle',label:`Конус ${(s.semiAngle*180/Math.PI*2).toFixed(3)}°`,value:s.semiAngle*180/Math.PI*2,unit:'°',confidence:0.9});
+
+  // Axial segment lengths for rotational parts: extracted from concentric circular edges.
+  // This is deterministic geometry, not AI inference.
+  if(rec.cylinders?.length&&rec.edges?.length){
+    const axisVotes=[0,0,0];
+    for(const c of rec.cylinders){const a=(c.placement?.axis||[0,0,1]).map(Math.abs),i=a.indexOf(Math.max(...a));axisVotes[i]++}
+    const axis=axisVotes.indexOf(Math.max(...axisVotes)),other=[0,1,2].filter(i=>i!==axis),center=rec.bounds.center,tol=Math.max(.02,Math.max(...rec.bounds.size)*.004);
+    const coords=[...new Set(rec.edges.filter(e=>e.kind==='circle'&&e.placement&&Math.abs(Math.abs(norm(e.placement.axis)[axis])-1)<.015&&Math.hypot(e.placement.origin[other[0]]-center[other[0]],e.placement.origin[other[1]]-center[other[1]])<=tol).map(e=>round(e.placement.origin[axis],4)))].sort((a,b)=>a-b);
+    for(let i=0;i<coords.length-1;i++){const value=coords[i+1]-coords[i];if(value>tol)d.push({type:'length',label:`Участок ${value.toFixed(3)}`,value,unit:'mm',axis:['X','Y','Z'][axis],from:coords[i],to:coords[i+1],confidence:0.94})}
+  }
   return d;
 }

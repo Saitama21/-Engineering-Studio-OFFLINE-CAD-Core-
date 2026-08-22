@@ -91,3 +91,11 @@ body.busy .card,body.busy .topbar{cursor:progress}
 .top-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;min-width:0}
 @media(max-width:1050px){.top-actions .status{display:none}.top-actions{justify-self:end}}
 @media(max-width:760px){.top-actions{grid-column:2;grid-row:1}.top-actions .status{display:none}.theme-toggle{grid-column:auto;grid-row:auto}}
+
+/* v0.4.0 · ROZFOOD brand + Drawing Core */
+.brand{min-width:0}.brand-logo{width:42px;height:42px;border-radius:12px;object-fit:cover;display:block;box-shadow:0 6px 18px rgba(17,75,155,.14);border:1px solid color-mix(in srgb,var(--accent) 14%,var(--line));background:#fff}.brand b{font-size:14px;letter-spacing:.01em}.brand span{font-size:9px;letter-spacing:.115em}
+.action-group{display:flex;align-items:center;gap:6px}.action-group.hidden{display:none!important}.mode-switch{display:flex;align-items:center;gap:4px;padding:3px;border:1px solid var(--line);border-radius:11px;background:var(--panel-2)}.mode-switch button{min-height:30px;border:0;box-shadow:none;background:transparent;padding:5px 8px;font-size:10.5px;border-radius:8px}.mode-switch button:hover{background:var(--panel-3)}.mode-switch button.active{background:var(--bg-elevated);color:var(--accent);box-shadow:0 1px 4px rgba(20,35,55,.12),inset 0 0 0 1px color-mix(in srgb,var(--accent) 13%,var(--line))}
+.drawing-workspace{background:linear-gradient(145deg,#edf1f5,#e7ecf2);overflow:auto;padding:12px}.drawing-workspace svg{width:100%;height:100%;min-width:720px;display:block;border-radius:5px}.drawing-workspace::-webkit-scrollbar{height:8px;width:8px}.drawing-workspace::-webkit-scrollbar-thumb{background:var(--line-strong);border-radius:20px}
+html[data-theme="dark"] .drawing-workspace{background:linear-gradient(145deg,#101826,#0d1420)}
+@media(max-width:1050px){.topbar{grid-template-columns:285px 1fr auto}.brand b{font-size:13px}.mode-switch button{padding:5px 6px}}
+@media(max-width:760px){.brand-logo{width:38px;height:38px;border-radius:11px}.brand b{font-size:12px}.brand span{font-size:8px}.viewport-head{overflow:visible}.view-actions,.action-group{width:100%}.mode-switch{overflow:auto;flex:1}.mode-switch button{white-space:nowrap;flex:none}.drawing-workspace{padding:6px}.drawing-workspace svg{min-width:760px}}

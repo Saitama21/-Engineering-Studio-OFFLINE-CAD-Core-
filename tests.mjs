@@ -34,7 +34,7 @@ for(const name of Object.keys(expected)){
   const fakeSvg={attrs:{},innerHTML:'',setAttribute(k,v){this.attrs[k]=v}};
   renderDrawing(fakeSvg,drawing,{mode:'production',projectName:name,fileName:name,theme:'light'});
   if(!fakeSvg.innerHTML.includes('ROZFOOD')||!fakeSvg.innerHTML.includes('ENGINEERING STUDIO'))throw new Error(name+': title block missing');
-  if(!fakeSvg.innerHTML.includes('Drawing Core v0.5.0'))throw new Error(name+': drawing version missing');
+  if(!fakeSvg.innerHTML.includes('Drawing Core v0.6.0'))throw new Error(name+': drawing version missing');
   if(name==='sample_flange.step'&&!fakeSvg.innerHTML.includes('PCD'))throw new Error(name+': PCD annotation missing');
   if(name==='sample_assembly.step'){const assemblySvg={attrs:{},innerHTML:'',setAttribute(k,v){this.attrs[k]=v}};renderDrawing(assemblySvg,drawing,{mode:'assemblyDetailed',projectName:name,fileName:name,theme:'light'});if(!assemblySvg.innerHTML.includes('СПЕЦИФИКАЦИЯ · BOM'))throw new Error(name+': detailed assembly BOM missing');if(!assemblySvg.innerHTML.includes('Сборочный детализированный'))throw new Error(name+': assembly mode missing');if(!assemblySvg.innerHTML.includes('>2<'))throw new Error(name+': position bubbles/BOM positions missing');}
 }
@@ -51,5 +51,5 @@ if(sw.nativeAssembly.container!=='CFB/OLE')throw new Error('SLDASM: CFB signatur
 console.log('SLDASM adapter',JSON.stringify({components:sw.nativeAssembly.componentCount,occurrences:sw.nativeAssembly.occurrenceCount,bom:[...bom]},null,2));
 const nativeSvg={attrs:{},innerHTML:'',setAttribute(k,v){this.attrs[k]=v}};
 renderNativeAssemblyDrawing(nativeSvg,sw.nativeAssembly,{projectName:'Machine',fileName:'Machine.SLDASM',theme:'light'});
-if(!nativeSvg.innerHTML.includes('SLDASM BOM')||!nativeSvg.innerHTML.includes('v0.5.0'))throw new Error('SLDASM: assembly drawing sheet missing');
-console.log('All v0.5.0 Full Drawing Core + Assembly Detail tests passed.');
+if(!nativeSvg.innerHTML.includes('SLDASM BOM')||!nativeSvg.innerHTML.includes('v0.6.0'))throw new Error('SLDASM: assembly drawing sheet missing');
+console.log('All v0.6.0 Import & Visualization Core tests passed.');

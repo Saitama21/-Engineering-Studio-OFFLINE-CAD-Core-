@@ -1,5 +1,14 @@
 const RE_ID = /^#(\d+)$/;
 
+export function decodeSTEPString(value='') {
+  return String(value).replace(/\\X2\\([0-9A-Fa-f]+)\\X0\\/g,(_,hex)=>{
+    let out='';
+    for(let i=0;i+3<hex.length;i+=4) out+=String.fromCharCode(parseInt(hex.slice(i,i+4),16));
+    return out;
+  }).replace(/\\X\\([0-9A-Fa-f]{2})/g,(_,hex)=>String.fromCharCode(parseInt(hex,16)));
+}
+
+
 function stripComments(text) {
   return text.replace(/\/\*[\s\S]*?\*\//g, ' ');
 }
@@ -42,7 +51,7 @@ function tokenize(src) {
         if (src[j] === "'") { j++; break; }
         s += src[j++];
       }
-      t.push({k:'str', v:s}); i = j; continue;
+      t.push({k:'str', v:decodeSTEPString(s)}); i = j; continue;
     }
     if (c === '$' || c === '*') { t.push({k:'null', v:null}); i++; continue; }
     const num = src.slice(i).match(/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:E[+-]?\d+)?/i);

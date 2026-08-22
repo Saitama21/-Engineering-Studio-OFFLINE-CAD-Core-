@@ -13,23 +13,16 @@ function basis(axis){const a=norm(axis),seed=Math.abs(a[2])<.82?[0,0,1]:[1,0,0],
 function corners(bounds){const mn=bounds.min,mx=bounds.max,out=[];for(const x of [mn[0],mx[0]])for(const y of [mn[1],mx[1]])for(const z of [mn[2],mx[2]])out.push([x,y,z]);return out}
 function dominantAxis(rec){return norm(rec?.recognition?.dominantAxis||(()=>{const s=rec?.bounds?.size||[1,1,1],i=s.indexOf(Math.max(...s)),a=[0,0,0];a[i]=1;return a})())}
 const edgeCache=new WeakMap();
-const lineworkCache=new WeakMap();
 function qpt(p,q=.02){return p.map(v=>Math.round(v/q)).join(',')}
 function edgeKey(a,b,comp){const aa=qpt(a),bb=qpt(b);return (aa<bb?aa+'|'+bb:bb+'|'+aa)+'|'+(comp||'')}
 function triNormal(f){const ns=f.normals||[];if(ns.length){let s=[0,0,0];for(const n of ns)s=add(s,n);if(len(s)>1e-8)return norm(s)}const p=f.loops?.[0]||[];return p.length>=3?norm(cross(sub(p[1],p[0]),sub(p[2],p[0]))):[0,0,1]}
 function buildEdges(rec){if(edgeCache.has(rec))return edgeCache.get(rec);const map=new Map();for(const f of rec.faces||[]){const pts=f.loops?.[0]||[];if(pts.length<3)continue;const n=triNormal(f),comp=f.componentId||'RAW';for(const [i,j] of [[0,1],[1,2],[2,0]]){const a=pts[i],b=pts[j],k=edgeKey(a,b,comp);let e=map.get(k);if(!e){e={a,b,normals:[],comp};map.set(k,e)}e.normals.push(n)}}const out=[...map.values()];edgeCache.set(rec,out);return out}
-function linework(rec,viewDir,{crease=.90}={}){const d=norm(viewDir),key=`${d.map(v=>Math.round(v*10000)).join(',')}|${Math.round(crease*1000)}`;let cache=lineworkCache.get(rec);if(!cache){cache=new Map();lineworkCache.set(rec,cache)}if(cache.has(key))return cache.get(key);const out=[];for(const e of buildEdges(rec)){const ns=e.normals;if(ns.length===1){out.push(e);continue}let silhouette=false,sharp=false;for(let i=0;i<ns.length;i++)for(let j=i+1;j<ns.length;j++){if(dot(ns[i],d)*dot(ns[j],d)<=0)silhouette=true;if(Math.abs(dot(ns[i],ns[j]))<crease)sharp=true}if(silhouette||sharp)out.push(e)}cache.set(key,out);return out}
+function linework(rec,viewDir,{crease=.90}={}){const d=norm(viewDir),out=[];for(const e of buildEdges(rec)){const ns=e.normals;if(ns.length===1){out.push(e);continue}let silhouette=false,sharp=false;for(let i=0;i<ns.length;i++)for(let j=i+1;j<ns.length;j++){if(dot(ns[i],d)*dot(ns[j],d)<=0)silhouette=true;if(Math.abs(dot(ns[i],ns[j]))<crease)sharp=true}if(silhouette||sharp)out.push(e)}return out}
 function viewSpec(axis,kind='side'){const{a,u,v}=basis(axis);if(kind==='end')return{px:u,py:v,dir:a};if(kind==='iso'){const px=norm(add(mul(a,.78),mul(u,.62))),py=norm(add(add(mul(v,.83),mul(a,-.27)),mul(u,.18))),dir=norm(cross(px,py));return{px,py,dir}}return{px:a,py:u,dir:v}}
 function project(p,s){return[dot(p,s.px),dot(p,s.py)]}
 function projectBounds(bounds,s){const pts=corners(bounds).map(p=>project(p,s)),xs=pts.map(p=>p[0]),ys=pts.map(p=>p[1]);return{min:[Math.min(...xs),Math.min(...ys)],max:[Math.max(...xs),Math.max(...ys)]}}
 function mapView(bounds,s,box,pad=10){const ex=projectBounds(bounds,s),sx=Math.max(ex.max[0]-ex.min[0],1),sy=Math.max(ex.max[1]-ex.min[1],1),scale=Math.min((box.w-pad*2)/sx,(box.h-pad*2)/sy),dx=box.x+(box.w-sx*scale)/2-ex.min[0]*scale,dy=box.y+(box.h+sy*scale)/2+ex.min[1]*scale;return{P:p=>{const q=project(p,s);return[dx+q[0]*scale,dy-q[1]*scale]},scale,ext:ex}}
-function chunkedNavPaths(projected,box,{stroke='#111',width=.72,cols=6,rows=5,linecap='round',linejoin='round'}={}){
-  const tw=Math.max(1,box.w/cols),th=Math.max(1,box.h/rows),bins=Array.from({length:cols*rows},()=>[[],[],[]]),counts=Array.from({length:cols*rows},()=>[0,0,0]),bounds=Array.from({length:cols*rows},()=>[[Infinity,Infinity,-Infinity,-Infinity],[Infinity,Infinity,-Infinity,-Infinity],[Infinity,Infinity,-Infinity,-Infinity]]);let n=0;
-  for(const seg of projected){const a=seg[0],b=seg[1],dist=Math.hypot(a[0]-b[0],a[1]-b[1]);if(dist<.32)continue;const mx=(a[0]+b[0])*.5,my=(a[1]+b[1])*.5,tx=clamp(Math.floor((mx-box.x)/tw),0,cols-1),ty=clamp(Math.floor((my-box.y)/th),0,rows-1),idx=ty*cols+tx;const hash=((n*1103515245+12345)>>>0)%10;const structural=dist>=Math.min(box.w,box.h)*.055,lod=structural?0:(hash<4?0:hash<7?1:2),bb=bounds[idx][lod];bins[idx][lod].push(`M${a[0].toFixed(1)} ${a[1].toFixed(1)}L${b[0].toFixed(1)} ${b[1].toFixed(1)}`);counts[idx][lod]++;bb[0]=Math.min(bb[0],a[0],b[0]);bb[1]=Math.min(bb[1],a[1],b[1]);bb[2]=Math.max(bb[2],a[0],b[0]);bb[3]=Math.max(bb[3],a[1],b[1]);n++}
-  let svg='';for(let ty=0;ty<rows;ty++)for(let tx=0;tx<cols;tx++){const idx=ty*cols+tx;for(let lod=0;lod<3;lod++){if(!bins[idx][lod].length)continue;const bb=bounds[idx][lod],bx=bb[0]-4,by=bb[1]-4,bw=Math.max(8,bb[2]-bb[0]+8),bh=Math.max(8,bb[3]-bb[1]+8);svg+=`<path class="drawing-nav-geometry" data-nav-geom="1" data-nav-bounds="${bx.toFixed(1)} ${by.toFixed(1)} ${bw.toFixed(1)} ${bh.toFixed(1)}" data-nav-lod="${lod}" data-nav-segments="${counts[idx][lod]}" d="${bins[idx][lod].join('')}" fill="none" stroke="${stroke}" stroke-width="${width}" stroke-linecap="${linecap}" stroke-linejoin="${linejoin}"/>`}}
-  return{svg,count:n};
-}
-function renderMesh(rec,s,box,{stroke='#111',width=.72,detail=false}={}){const M=mapView(rec.bounds,s,box,detail?2:8),edges=linework(rec,s.dir,{crease:detail ? .94 : .90}),projected=[];for(const e of edges)projected.push([M.P(e.a),M.P(e.b)]);const nav=chunkedNavPaths(projected,box,{stroke,width,cols:detail?5:6,rows:detail?4:5});return{svg:nav.svg,map:M,count:nav.count}}
+function renderMesh(rec,s,box,{stroke='#111',width=.72,detail=false}={}){const M=mapView(rec.bounds,s,box,detail?2:8),edges=linework(rec,s.dir,{crease:detail ? .94 : .90});let d='';for(const e of edges){const a=M.P(e.a),b=M.P(e.b);if(Math.hypot(a[0]-b[0],a[1]-b[1])<.32)continue;d+=`M${a[0].toFixed(1)} ${a[1].toFixed(1)}L${b[0].toFixed(1)} ${b[1].toFixed(1)}`;}return{svg:`<path d="${d}" fill="none" stroke="${stroke}" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round"/>`,map:M}}
 function dimH(x1,x2,y,y0,label){return`<g stroke="#111" fill="#111" stroke-width=".8" font-family="Arial,sans-serif" font-size="10"><line x1="${x1}" y1="${y0}" x2="${x1}" y2="${y+4}"/><line x1="${x2}" y1="${y0}" x2="${x2}" y2="${y+4}"/><line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}"/><path d="M${x1} ${y}l6 -2.4v4.8zM${x2} ${y}l-6 -2.4v4.8z"/><text x="${(x1+x2)/2}" y="${y-4}" text-anchor="middle" stroke="none">${esc(label)}</text></g>`}
 function dimV(x,y1,y2,x0,label){return`<g stroke="#111" fill="#111" stroke-width=".8" font-family="Arial,sans-serif" font-size="10"><line x1="${x0}" y1="${y1}" x2="${x-4}" y2="${y1}"/><line x1="${x0}" y1="${y2}" x2="${x-4}" y2="${y2}"/><line x1="${x}" y1="${y1}" x2="${x}" y2="${y2}"/><path d="M${x} ${y1}l-2.4 6h4.8zM${x} ${y2}l-2.4 -6h4.8z"/><text x="${x-5}" y="${(y1+y2)/2}" text-anchor="middle" dominant-baseline="middle" transform="rotate(-90 ${x-5} ${(y1+y2)/2})" stroke="none">${esc(label)}</text></g>`}
 function axialStations(rec,axis,diam){const R=rec.recognition||{},planes=(R.planes||[]).filter(p=>Math.abs(dot(norm(p.normal),axis))>.99);const vals=[];for(const p of planes){const transverse=p.bounds?.size?.filter((_,i)=>Math.abs(axis[i])<.8)||[];const span=Math.max(...(p.bounds?.size||[0]));if(span<diam*.985)continue;vals.push({t:dot(p.origin,axis),area:p.area||0,span})}vals.sort((a,b)=>a.t-b.t);const out=[];for(const x of vals){const g=out.at(-1);if(g&&Math.abs(g.t-x.t)<1){g.t=(g.t*g.w+x.t*x.area)/(g.w+x.area);g.w+=x.area}else out.push({t:x.t,w:x.area})}return out.map(x=>x.t)}
@@ -75,9 +68,10 @@ function triPlaneSegment(loop,planePoint,planeNormal,eps=.08){
 }
 function renderSection(rec,s,box,planePoint,planeNormal,{stroke='#111',width=.8,hatch=true}={}){
   const M=mapView(rec.bounds,s,box,6),segments=[];for(const f of rec.faces||[]){const seg=triPlaneSegment(f.loops?.[0],planePoint,planeNormal);if(seg)segments.push(seg)}
-  const projected=[];for(const seg of segments)projected.push([M.P(seg[0]),M.P(seg[1])]);const nav=chunkedNavPaths(projected,box,{stroke,width,cols:5,rows:4,linecap:'butt',linejoin:'miter'});let svg=nav.svg;
+  let d='';for(const seg of segments){const a=M.P(seg[0]),b=M.P(seg[1]);if(Math.hypot(a[0]-b[0],a[1]-b[1])>.3)d+=`M${a[0].toFixed(1)} ${a[1].toFixed(1)}L${b[0].toFixed(1)} ${b[1].toFixed(1)}`}
+  let svg=`<path d="${d}" fill="none" stroke="${stroke}" stroke-width="${width}"/>`;
   if(hatch){const id='h'+Math.random().toString(36).slice(2,8);svg+=`<defs><pattern id="${id}" width="9" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="9" stroke="#888" stroke-width=".45"/></pattern></defs><rect x="${box.x+5}" y="${box.y+5}" width="${box.w-10}" height="${box.h-10}" fill="url(#${id})" opacity=".06"/>`}
-  return{svg,map:M,count:nav.count};
+  return{svg,map:M,count:segments.length};
 }
 function faceCentroid(f){const p=f.loops?.[0]||[];if(!p.length)return[0,0,0];let s=[0,0,0];for(const q of p)s=add(s,q);return mul(s,1/p.length)}
 function subRecord(rec,faces){return{...rec,faces,bounds:(()=>{const pts=[];for(const f of faces)for(const p of f.loops?.[0]||[])pts.push(p);if(!pts.length)return rec.bounds;const mn=[Infinity,Infinity,Infinity],mx=[-Infinity,-Infinity,-Infinity];for(const p of pts)for(let i=0;i<3;i++){mn[i]=Math.min(mn[i],p[i]);mx[i]=Math.max(mx[i],p[i])}return{min:mn,max:mx,size:sub(mx,mn),center:mul(add(mn,mx),.5)}})()};}
@@ -172,7 +166,7 @@ function renderGeneralAssemblySheet(svg,rec,{projectName='SLDASM',fileName='',th
   if(cfg.section)s+=`<g stroke="#111" fill="#111" font-family="Arial" font-size="10"><line x1="${main.x+12}" y1="${c1[1]}" x2="${main.x+main.w-12}" y2="${c1[1]}" stroke-dasharray="12 4 2 4"/><path d="M${main.x+18} ${c1[1]}l10 -5v10zM${main.x+main.w-18} ${c1[1]}l-10 -5v10z"/><text x="${main.x+4}" y="${c1[1]-8}" stroke="none">A</text><text x="${main.x+main.w-6}" y="${c1[1]-8}" stroke="none">A</text></g>`;
   if(cfg.bom)s+=renderBOM(rec.nativeAssembly,bomBox);
   s+=renderReferenceStamp(projectName,scale,stampBox,mode==='assemblyDetailed'?'Сборочный чертёж':`${cfg.label[0]+cfg.label.slice(1).toLowerCase()} чертёж`);
-  s+=`<g font-family="Arial" fill="#111"><text x="${large?105:95}" y="${H-42}" font-size="7" fill="#555">ROZFOOD ENGINEERING STUDIO · Drawing Intelligence v1.4.1 · GENERAL · ${cfg.label} · ${large?'A1':'A2'} · ${esc(fileName)}</text><text x="${W-145}" y="${bomBox.y-12}" font-size="9" text-anchor="end">VERIFIED TESS</text></g>`;
+  s+=`<g font-family="Arial" fill="#111"><text x="${large?105:95}" y="${H-42}" font-size="7" fill="#555">ROZFOOD ENGINEERING STUDIO · Drawing Intelligence v1.4.2 · GENERAL · ${cfg.label} · ${large?'A1':'A2'} · ${esc(fileName)}</text><text x="${W-145}" y="${bomBox.y-12}" font-size="9" text-anchor="end">VERIFIED TESS</text></g>`;
   svg.innerHTML=s;
 }
 
@@ -217,7 +211,7 @@ export function renderAssemblyProductionSheet(svg,rec,{projectName='SLDASM',file
   s+=`<text x="${isoSolid.x+8}" y="${isoSolid.y+isoSolid.h+10}" font-family="Arial" font-size="9" fill="#111">Сборочный изометрический вид</text><text x="${isoExpl.x+8}" y="${isoExpl.y+isoExpl.h+10}" font-family="Arial" font-size="9" fill="#111">B–B (1:5)</text>`;
   s+=renderBOM(rec.nativeAssembly,{x:1030,y:625,w:325,h:205});
   s+=renderReferenceStamp(projectName,scale,{x:860,y:845,w:495,h:95});
-  s+=`<g font-family="Arial" fill="#111"><text x="95" y="944" font-size="7" fill="#555">ROZFOOD ENGINEERING STUDIO · Drawing Intelligence v1.4.1 · ${esc(fileName)}</text><text x="1240" y="612" font-size="9" text-anchor="end">VERIFIED TESS</text></g>`;
+  s+=`<g font-family="Arial" fill="#111"><text x="95" y="944" font-size="7" fill="#555">ROZFOOD ENGINEERING STUDIO · Drawing Intelligence v1.4.2 · ${esc(fileName)}</text><text x="1240" y="612" font-size="9" text-anchor="end">VERIFIED TESS</text></g>`;
   svg.innerHTML=s;
 }
 
@@ -246,7 +240,7 @@ function renderGeneralComponentSheet(svg,part,{componentName='Деталь',file
   const pnotes=patternNotes(part,5),cnotes=precisionNotes(part,4),notes=[...pnotes,...cnotes].slice(0,8);
   if(notes.length){s+=`<g font-family="Arial" fill="#111"><text x="830" y="790" font-size="10.5" font-weight="700">Проверяемые элементы</text>`;notes.forEach((t,i)=>s+=`<text x="830" y="${810+i*16}" font-size="8.8">${esc(t)}</text>`);s+='</g>'}
   s+=renderPartStamp(componentName,scale,{x:860,y:845,w:495,h:95});
-  s+=`<text x="95" y="944" font-family="Arial" font-size="7" fill="#555">ROZFOOD ENGINEERING STUDIO · Drawing Intelligence v1.4.1 · GENERAL PART · ${esc(fileName)}</text><text x="1240" y="815" font-family="Arial" font-size="9" text-anchor="end" fill="#111">VERIFIED TESS</text>`;
+  s+=`<text x="95" y="944" font-family="Arial" font-size="7" fill="#555">ROZFOOD ENGINEERING STUDIO · Drawing Intelligence v1.4.2 · GENERAL PART · ${esc(fileName)}</text><text x="1240" y="815" font-family="Arial" font-size="9" text-anchor="end" fill="#111">VERIFIED TESS</text>`;
   svg.innerHTML=s;
 }
 
@@ -270,6 +264,6 @@ export function renderComponentProductionSheet(svg,rec,{componentId=null,compone
   const pnotes=patternNotes(part,4);if(pnotes.length)pnotes.forEach((t,i)=>s+=`<text x="${endBox.x+8}" y="${endBox.y+22+i*17}" font-family="Arial" font-size="9.5" fill="#111">${esc(t)}</text>`);else{const holes=groupedHoles(part,axis);holes.forEach((h,i)=>s+=`<text x="${endBox.x+8}" y="${endBox.y+22+i*17}" font-family="Arial" font-size="9.5" fill="#111">${h.count} отв. Ø${fmt(h.d,2)}</text>`)}const cnotes=precisionNotes(part,3);cnotes.forEach((t,i)=>s+=`<text x="${isoBox.x+8}" y="${isoBox.y+22+i*16}" font-family="Arial" font-size="9" fill="#111">${esc(t)}</text>`);
   s+=`<g stroke="#111" fill="#111" font-family="Arial" font-size="10"><line x1="${main.x+14}" y1="${main.y+main.h/2}" x2="${main.x+main.w-14}" y2="${main.y+main.h/2}" stroke-dasharray="12 4 2 4"/><path d="M${main.x+18} ${main.y+main.h/2}l10 -5v10zM${main.x+main.w-18} ${main.y+main.h/2}l-10 -5v10z"/><text x="${main.x+4}" y="${main.y+main.h/2-8}" stroke="none">A</text><text x="${main.x+main.w-6}" y="${main.y+main.h/2-8}" stroke="none">A</text></g>`;
   s+=renderPartStamp(componentName,scale,{x:860,y:845,w:495,h:95});
-  s+=`<text x="95" y="944" font-family="Arial" font-size="7" fill="#555">ROZFOOD ENGINEERING STUDIO · Drawing Intelligence v1.4.1 · ${esc(fileName)}</text><text x="1240" y="815" font-family="Arial" font-size="9" text-anchor="end" fill="#111">VERIFIED TESS</text>`;
+  s+=`<text x="95" y="944" font-family="Arial" font-size="7" fill="#555">ROZFOOD ENGINEERING STUDIO · Drawing Intelligence v1.4.2 · ${esc(fileName)}</text><text x="1240" y="815" font-family="Arial" font-size="9" text-anchor="end" fill="#111">VERIFIED TESS</text>`;
   svg.innerHTML=s;
 }

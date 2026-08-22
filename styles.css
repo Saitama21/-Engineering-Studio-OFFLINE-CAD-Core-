@@ -179,7 +179,13 @@ html[data-theme="dark"] .drawing-workspace{background:linear-gradient(145deg,#10
 .drawing-workspace.advanced-edit-nav.tool-pan::after{content:'Панорама · тянуть ЛКМ · колесо — зум'}
 @media(max-width:760px){#drawingActions .drawing-tool-palette{width:100%;display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}.drawing-tool-palette button{width:100%;min-width:0;white-space:normal}}
 
-/* v1.4.1 viewport LOD: keep heavy 2D navigation responsive by skipping
-   off-screen / lower-detail geometry only while the user is navigating. */
-.drawing-workspace svg .drawing-nav-culled{display:none!important}
-.drawing-workspace.drawing-nav-interacting svg{pointer-events:none}
+/* v1.4.2 · Focus-priority local drawing render */
+.drawing-workspace.drawing-nav-interacting svg{will-change:contents;shape-rendering:optimizeSpeed;text-rendering:optimizeLegibility}
+.drawing-workspace.drawing-nav-heavy.drawing-nav-interacting svg text{visibility:visible}
+.drawing-workspace.drawing-nav-heavy.drawing-nav-interacting svg [stroke-dasharray]{visibility:visible}
+.drawing-workspace.drawing-nav-interacting svg [filter]{filter:none!important}
+.drawing-workspace.drawing-local-render::before{content:'LOCAL RENDER';position:absolute;right:12px;bottom:10px;z-index:4;padding:4px 7px;border-radius:7px;border:1px solid color-mix(in srgb,var(--accent) 35%,var(--line));background:color-mix(in srgb,var(--panel) 92%,transparent);color:var(--accent);font-size:9px;font-weight:800;letter-spacing:.08em;pointer-events:none}
+.drawing-workspace.advanced-edit-nav.tool-edit::after{content:'Редактировать · ЛКМ — выбрать/переместить · колесо — плавный локальный зум к курсору'}
+.drawing-workspace.advanced-edit-nav.tool-zoom::after{content:'Зум · колесо — локальный рендер вокруг курсора · клик — приблизить · Shift+клик — отдалить'}
+.drawing-workspace.advanced-edit-nav.tool-pan::after{content:'Панорама · тянуть ЛКМ · локальный рендер видимой области · колесо — зум'}
+@media(max-width:760px){.drawing-workspace.drawing-local-render::before{right:7px;bottom:7px;font-size:8px}}

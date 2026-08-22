@@ -5,7 +5,7 @@
   "display": "standalone",
   "background_color": "#f5f7fa",
   "theme_color": "#ffffff",
-  "description": "Offline SLDASM CAD: native 3D assembly, verified analytical geometry, adaptive AXIAL/GENERAL drawings and an advanced local drawing editor with a dedicated Edit/Zoom/Pan toolbar, cursor-anchored smooth zoom, adaptive navigation LOD, cached drawing renders, annotation editing, tolerances, notes, roughness and weld symbols, plus interactive LOD for large assemblies. No AI/API or server CAD.",
+  "description": "Offline SLDASM CAD: native 3D assembly, verified analytical geometry, adaptive AXIAL/GENERAL drawings and an advanced local drawing editor with a dedicated Edit/Zoom/Pan toolbar, cursor-anchored smooth zoom, focus-priority local drawing render, viewport linework reduction, cached drawing renders, annotation editing, tolerances, notes, roughness and weld symbols, plus interactive LOD for large assemblies. No AI/API or server CAD.",
   "icons": [
     {
       "src": "icons/icon-192.png",

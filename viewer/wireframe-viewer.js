@@ -1,5 +1,10 @@
 import {add,mul,basis,sub,rotatePoint} from '../core/math3d.js';
 
+function themeColor(name,fallback){
+  const v=getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return v||fallback;
+}
+
 export class WireframeViewer{
   constructor(canvas){
     this.canvas=canvas; this.ctx=canvas.getContext('2d'); this.rec=null; this.rx=-0.5; this.ry=0.65; this.zoom=1; this.pan=[0,0]; this.drag=null; this.showSurfaces=true; this.resizeObs=new ResizeObserver(()=>this.resize()); this.resizeObs.observe(canvas.parentElement); this.bind(); this.resize();
@@ -18,15 +23,16 @@ export class WireframeViewer{
   sampleCircle(e,n=72){const {x,y}=basis(e.placement.axis,e.placement.refdir),o=e.placement.origin;const pts=[];for(let i=0;i<=n;i++){const a=i/n*Math.PI*2;pts.push(add(o,add(mul(x,Math.cos(a)*e.radius),mul(y,Math.sin(a)*e.radius))))}return pts}
   sampleEllipse(e,n=72){const {x,y}=basis(e.placement.axis,e.placement.refdir),o=e.placement.origin;const pts=[];for(let i=0;i<=n;i++){const a=i/n*Math.PI*2;pts.push(add(o,add(mul(x,Math.cos(a)*e.r1),mul(y,Math.sin(a)*e.r2))))}return pts}
   draw(){
-    const c=this.ctx,w=this.canvas.clientWidth||1,h=this.canvas.clientHeight||1;c.clearRect(0,0,w,h);c.fillStyle='#080d15';c.fillRect(0,0,w,h);
-    c.strokeStyle='#17263a';c.lineWidth=1;for(let x=0;x<w;x+=40){c.beginPath();c.moveTo(x,0);c.lineTo(x,h);c.stroke()}for(let y=0;y<h;y+=40){c.beginPath();c.moveTo(0,y);c.lineTo(w,y);c.stroke()}
-    if(!this.rec){c.fillStyle='#8093aa';c.font='14px system-ui';c.fillText('Загрузите STEP/STP',24,36);return}
+    const c=this.ctx,w=this.canvas.clientWidth||1,h=this.canvas.clientHeight||1;
+    const bg=themeColor('--canvas-bg','#fff'),grid=themeColor('--canvas-grid','#edf1f5'),wire=themeColor('--wire','#2a3340'),circle=themeColor('--wire-circle','#0a67ff'),muted=themeColor('--muted','#6e7781');
+    c.clearRect(0,0,w,h);c.fillStyle=bg;c.fillRect(0,0,w,h);
+    c.strokeStyle=grid;c.lineWidth=1;for(let x=0;x<w;x+=40){c.beginPath();c.moveTo(x,0);c.lineTo(x,h);c.stroke()}for(let y=0;y<h;y+=40){c.beginPath();c.moveTo(0,y);c.lineTo(w,y);c.stroke()}
+    if(!this.rec){c.fillStyle=muted;c.font='14px -apple-system,BlinkMacSystemFont,system-ui';c.fillText('Загрузите STEP/STP',24,36);return}
     const b=this.rec.bounds, max=Math.max(...b.size,1), scale=Math.min(w,h)*0.58/max, cx=w/2+this.pan[0],cy=h/2+this.pan[1],center=b.center;
     const segs=[];
     for(const e of this.rec.edges){let pts;if(e.kind==='circle')pts=this.sampleCircle(e);else if(e.kind==='ellipse')pts=this.sampleEllipse(e);else pts=[e.p1,e.p2];for(let i=0;i<pts.length-1;i++){const a=this.project(pts[i],scale,cx,cy,center),bb=this.project(pts[i+1],scale,cx,cy,center);segs.push([a,bb,(a[2]+bb[2])/2,e.kind])}}
     segs.sort((a,b)=>a[2]-b[2]);
-    for(const [a,bb,,kind] of segs){c.strokeStyle=kind==='circle'?'#73dbff':'#a8c7df';c.globalAlpha=kind==='circle'?0.92:0.72;c.lineWidth=kind==='circle'?1.4:1;c.beginPath();c.moveTo(a[0],a[1]);c.lineTo(bb[0],bb[1]);c.stroke()}
-    c.globalAlpha=1;
-    c.fillStyle='#7c8ca1';c.font='12px ui-monospace,monospace';c.fillText(`${this.rec.counts.solids} body · ${this.rec.counts.faces} faces · ${this.rec.counts.edges} edges`,14,h-16);
+    for(const [a,bb,,kind] of segs){c.strokeStyle=kind==='circle'?circle:wire;c.globalAlpha=kind==='circle'?0.96:0.78;c.lineWidth=kind==='circle'?1.6:1.15;c.beginPath();c.moveTo(a[0],a[1]);c.lineTo(bb[0],bb[1]);c.stroke()}
+    c.globalAlpha=1;c.fillStyle=muted;c.font='12px ui-monospace,SFMono-Regular,Menlo,monospace';c.fillText(`${this.rec.counts.solids} body · ${this.rec.counts.faces} faces · ${this.rec.counts.edges} edges`,14,h-16);
   }
 }

@@ -6,6 +6,21 @@ const viewer=new WireframeViewer($('#viewerCanvas'));
 const worker=new Worker('./import-worker.js',{type:'module'});
 let state={fileName:null,fileSize:0,rec:null,dimensions:[],types:[],parseMs:0};
 
+const THEME_KEY='engineering-studio-theme';
+function applyTheme(theme,{persist=true}={}){
+  const next=theme==='dark'?'dark':'light';
+  document.documentElement.dataset.theme=next;
+  document.documentElement.style.colorScheme=next;
+  const meta=document.querySelector('meta[name="theme-color"]');
+  if(meta)meta.content=next==='dark'?'#090f19':'#ffffff';
+  const btn=$('#themeToggle');
+  if(btn){btn.textContent=next==='dark'?'☾':'☀︎';btn.title=`Тема: ${next==='dark'?'тёмная':'светлая'}`;btn.setAttribute('aria-label',next==='dark'?'Включить светлую тему':'Включить тёмную тему');}
+  if(persist)try{localStorage.setItem(THEME_KEY,next)}catch{}
+  if(typeof viewer!=='undefined')viewer.draw();
+  if(state?.rec)renderDrawing($('#drawingSvg'),drawingFromRecognition(state.rec,state.dimensions));
+}
+function initTheme(){let saved='light';try{saved=localStorage.getItem(THEME_KEY)||'light'}catch{}applyTheme(saved,{persist:false})}
+
 function log(msg){const p=document.createElement('p');const t=document.createElement('time');t.textContent=new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit',second:'2-digit'});p.append(t,' '+msg);$('#logBody').prepend(p)}
 function fmt(n,d=3){return Number.isFinite(n)?n.toFixed(d):'—'}
 function setBusy(on){$('#fileInput').disabled=on;$('#offlineStatus').textContent=on?'Разбираю B-Rep…':'Оффлайн ядро';document.body.classList.toggle('busy',on)}
@@ -38,11 +53,13 @@ function renderAssembly(){const r=state.rec,root=$('#assemblyBody');if(r.isAssem
 
 function switchTab(name){$$('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));$$('.view').forEach(v=>v.classList.remove('active-view'));$(`#${name}View`).classList.add('active-view');$('#viewTitle').textContent={model:'3D модель',drawing:'Авточертёж',dimensions:'Распознанные размеры',assembly:'Состав сборки'}[name];if(name==='model')viewer.draw()}
 $$('.tab').forEach(b=>b.addEventListener('click',()=>switchTab(b.dataset.tab)));
+$('#themeToggle').addEventListener('click',()=>applyTheme(document.documentElement.dataset.theme==='dark'?'light':'dark'));
 $('#fitBtn').addEventListener('click',()=>viewer.fit());$('#wireBtn').addEventListener('click',()=>viewer.draw());$('#clearLog').addEventListener('click',()=>$('#logBody').innerHTML='');
 $('#fileInput').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;await importText(await f.text(),f.name,f.size);e.target.value=''})
 const drop=$('#dropZone');['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('drag')}));['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('drag')}));drop.addEventListener('drop',async e=>{const f=e.dataTransfer.files[0];if(f)await importText(await f.text(),f.name,f.size)});
 $$('[data-sample]').forEach(b=>b.addEventListener('click',async()=>{const url=b.dataset.sample;const res=await fetch(url);const text=await res.text();importText(text,url.split('/').pop(),text.length)}));
 $('#exportBtn').addEventListener('click',()=>{if(!state.rec)return;const report={version:'0.3.0',generated:new Date().toISOString(),file:state.fileName,counts:state.rec.counts,bounds:state.rec.bounds,dimensions:state.dimensions,boltPatterns:state.rec.boltPatterns,products:state.rec.products,occurrences:state.rec.occurrences};const blob=new Blob([JSON.stringify(report,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(state.fileName||'model').replace(/\.[^.]+$/,'')+'-engineering-report.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)});
 function esc(x){return String(x??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+initTheme();
 if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').then(()=>log('Service Worker активен: приложение готово к офлайн-кэшу.')).catch(e=>log('Service Worker: '+e.message));
 window.addEventListener('online',()=>$('#offlineStatus').textContent='Онлайн (ядро всё равно локальное)');window.addEventListener('offline',()=>$('#offlineStatus').textContent='Оффлайн ядро');

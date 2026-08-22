@@ -74,14 +74,14 @@ self.onmessage=async e=>{
     const rec=await parseSLDASM(buffer,fileName);
     stage='tess-recognition';
     if(rec.geometryAvailable){
-      rec.recognition=recognizeTessellationGeometry(rec);
+      rec.recognition=recognizeTessellationGeometry(rec,{maxFeatures:1200});
       rec.counts.planes=rec.recognition.counts.planes;
       rec.counts.cylinders=rec.recognition.counts.cylinders;
       rec.counts.holes=rec.recognition.counts.holes;
       rec.counts.recognizedAxes=rec.recognition.counts.axes;
     }
     stage='dimensions';
-    let dimensions=rec.geometryAvailable?recognitionDimensions(rec,rec.recognition,{limit:24}):[];
+    let dimensions=rec.geometryAvailable?recognitionDimensions(rec,rec.recognition,{limit:36}):[];
     const types=rec.recognition?['plane','cylinder','hole','axis']:[];
     stage='prepare-transfer';
     dimensions=slimForTransfer(rec,dimensions);

@@ -1,10 +1,10 @@
 import {WireframeViewer} from './viewer/wireframe-viewer.js';
 import {drawingFromRecognition,renderDrawing,serializeDrawing,renderNativeAssemblyDrawing} from './drawing/drawing-engine.js';
 import {renderTessRecognitionDrawing} from './drawing/tess-recognition-drawing.js';
-import {renderAssemblyProductionSheet,renderComponentProductionSheet} from './drawing/assembly-production-sheet-v100.js';
+import {renderAssemblyProductionSheet,renderComponentProductionSheet} from './drawing/assembly-production-sheet-v110.js';
 
-const APP_VERSION='1.0.3';
-const BUILD_LABEL='PRODUCTION DRAWING CORE';
+const APP_VERSION='1.1.0';
+const BUILD_LABEL='PRECISION DRAWING CORE';
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const viewer=new WireframeViewer($('#viewerCanvas'));
 viewer.onSelect=(id,instance)=>{state.selectedComponentId=id||null;state.selectedComponentName=instance?.name||'';const el=$('#selectionInfo');if(el)el.textContent=id?`выбрано: ${instance?.name||'компонент'}`:'клик по детали — выбрать';updateDrawingModeAvailability();};
@@ -37,7 +37,7 @@ async function importFile(file){
   $('#projectName').textContent=fileName.replace(/\.[^.]+$/,'');
   $('#fileMeta').textContent=`${fileName} · ${(fileSize/1024).toFixed(1)} KB · локально`;
   const buffer=await file.arrayBuffer();
-  log(`Импорт ${fileName}: SLDASM Production Drawing decoder · ${(fileSize/1024).toFixed(1)} KB.`);
+  log(`Импорт ${fileName}: SLDASM Precision Drawing decoder · ${(fileSize/1024).toFixed(1)} KB.`);
   worker.postMessage({kind:'sldasm',buffer,fileName},[buffer]);
 }
 
@@ -48,7 +48,7 @@ worker.onmessage=e=>{
   const n=state.rec.nativeAssembly;
   if(n?.root)$('#projectName').textContent=n.root;
   const geo=state.rec.geometryAvailable!==false;
-  log(`SLDASM готов: ${n.componentCount} позиций · ${n.occurrenceCount} вхождений · ${n.faceBlocks||0} tess-блоков · ${n.triangles||0} треугольников. Распознано: ${state.rec.recognition?.counts?.planes||0} плоскостей · ${state.rec.recognition?.counts?.cylinders||0} цилиндров · ${state.rec.recognition?.counts?.holes||0} отверстий. Интернет не использовался.`);
+  log(`SLDASM готов: ${n.componentCount} позиций · ${n.occurrenceCount} вхождений · ${n.faceBlocks||0} tess-блоков · ${n.triangles||0} треугольников. Распознано: ${state.rec.recognition?.counts?.planes||0} плоскостей · ${state.rec.recognition?.counts?.cylinders||0} цилиндров · ${state.rec.recognition?.counts?.holes||0} отверстий · ${state.rec.recognition?.counts?.holePatterns||0} групп отверстий/PCD. Интернет не использовался.`);
   switchTab(geo?'model':'assembly');
 };
 
@@ -60,9 +60,9 @@ function renderAll(){
   $('#entityCount').textContent=geo?`${r.counts.tessFaceBlocks||0} tess faces`:`${r.nativeAssembly?.componentCount||0} компонентов`;
   $('#sx').textContent=geo?fmt(r.bounds.size[0])+' mm':'—';$('#sy').textContent=geo?fmt(r.bounds.size[1])+' mm':'—';$('#sz').textContent=geo?fmt(r.bounds.size[2])+' mm':'—';
   $('#solidCount').textContent=geo?'TESS':'—';$('#faceCount').textContent=geo?(r.counts.triangles??r.counts.sceneFaces??r.counts.faces):'—';$('#edgeCount').textContent=geo?(r.counts.sceneEdges??r.counts.edges):'—';
-  $('#unitLabel').textContent=geo?r.unit:'—';$('#unitFactor').textContent=geo?fmt(r.factor):'—';$('#cylinderCount').textContent=geo?(r.recognition?.counts?.cylinders??0):'—';$('#bsplineCount').textContent=geo?(r.recognition?.counts?.holes??0):'—';
+  $('#unitLabel').textContent=geo?r.unit:'—';$('#unitFactor').textContent=geo?fmt(r.factor):'—';$('#cylinderCount').textContent=geo?(r.recognition?.counts?.cylinders??0):'—';$('#bsplineCount').textContent=geo?(r.recognition?.counts?.holes??0):'—';const pc=$('#patternCount'),cc=$('#coaxialCount');if(pc)pc.textContent=geo?(r.recognition?.counts?.holePatterns??0):'—';if(cc)cc.textContent=geo?(r.recognition?.counts?.coaxialGroups??0):'—';
   const conf=r.recognition?Math.round((r.recognition.confidence||0)*100):(d.length?Math.round(d.reduce((s,x)=>s+x.confidence,0)/d.length*100):0);$('#confidence').textContent=geo?(conf+'% TESS'):'META';
-  if(geo)$('#selectionInfo').textContent=`TESS Recognition · ${r.recognition?.counts?.cylinders||0} цилиндров · ${r.recognition?.counts?.holes||0} отверстий`;renderTree();renderFeatures();renderDimensions();renderAssembly();updateDrawingModeAvailability();renderCurrentDrawing();$('#exportDrawingBtn').disabled=!r;
+  if(geo)$('#selectionInfo').textContent=`Precision TESS · ${r.recognition?.counts?.holePatterns||0} групп отверстий · ${r.recognition?.counts?.coaxialGroups||0} соосных`;renderTree();renderFeatures();renderDimensions();renderAssembly();updateDrawingModeAvailability();renderCurrentDrawing();$('#exportDrawingBtn').disabled=!r;
 }
 
 function renderCurrentDrawing(){
@@ -97,7 +97,7 @@ function updateDrawingModeAvailability(){
 
 function renderTree(){
   const r=state.rec,n=r.nativeAssembly;
-  const rows=[['Файл',state.fileName],['Формат','SLDASM'],['Адаптер','Production Drawing v1.0.3'],['Контейнер',n.container],['Streams',n.streamCount||0],['Позиций',n.componentCount],['Вхождений',n.occurrenceCount],['Tess-блоков',n.faceBlocks||0],['Исходных треуг.',n.sourceTriangles||0],['Сценовых треуг.',n.triangles||0],...(r.counts.displayTriangles&&r.counts.displayTriangles!==r.counts.triangles?[['3D LOD',r.counts.displayTriangles],['Передача','Stack-safe']]:[]),['Размещено',n.mappedOccurrences||0]];
+  const rows=[['Файл',state.fileName],['Формат','SLDASM'],['Адаптер','Precision Drawing v1.1.0'],['Контейнер',n.container],['Streams',n.streamCount||0],['Позиций',n.componentCount],['Вхождений',n.occurrenceCount],['Tess-блоков',n.faceBlocks||0],['Исходных треуг.',n.sourceTriangles||0],['Сценовых треуг.',n.triangles||0],...(r.counts.displayTriangles&&r.counts.displayTriangles!==r.counts.triangles?[['3D LOD',r.counts.displayTriangles],['Передача','Stack-safe']]:[]),['Размещено',n.mappedOccurrences||0]];
   $('#treeBody').classList.remove('empty');
   $('#treeBody').innerHTML=rows.map(([a,b])=>`<div class="tree-row"><b>${esc(a)}</b><span>${esc(b)}</span></div>`).join('');
 }
@@ -107,17 +107,18 @@ function renderFeatures(){
   const r=state.rec,n=r.nativeAssembly,geo=r.geometryAvailable!==false;
   $('#featureList').classList.remove('empty');
   const G=r.recognition;
-  $('#featureList').innerHTML=`<div class="feature"><i>☷</i><div>SLDASM component tree<small>${esc(n?.componentCount||0)} позиций · ${esc(n?.occurrenceCount||0)} вхождений</small></div><strong>OK</strong></div><div class="feature"><i>△</i><div>3D FaceTessellations + transforms<small>${geo?`${esc(n?.mappedOccurrences||0)} вхождений · ${esc(n?.triangles||0)} треугольников`:'встроенная тесселяция не найдена'}</small></div><strong>${geo?'OK':'—'}</strong></div><div class="feature"><i>◉</i><div>Tess Geometry Recognition<small>${G?`${esc(G.counts.planes)} плоск. · ${esc(G.counts.cylinders)} цилиндр. · ${esc(G.counts.holes)} отверст.`:'ожидает 3D mesh'}</small></div><strong>${G?'OK':'—'}</strong></div><div class="feature"><i>▱</i><div>Production Drawing Layout<small>${G?'эталонная компоновка · A–A/B–B · C/D · позиции · BOM':'ожидает распознавание геометрии'}</small></div><strong>${G?'OK':'—'}</strong></div><div class="feature"><i>◎</i><div>Точный B-Rep<small>Parasolid topology ещё не декодируется; TESS-размеры требуют VERIFY</small></div><strong>—</strong></div>`;
+  $('#featureList').innerHTML=`<div class="feature"><i>☷</i><div>SLDASM component tree<small>${esc(n?.componentCount||0)} позиций · ${esc(n?.occurrenceCount||0)} вхождений</small></div><strong>OK</strong></div><div class="feature"><i>△</i><div>3D FaceTessellations + transforms<small>${geo?`${esc(n?.mappedOccurrences||0)} вхождений · ${esc(n?.triangles||0)} треугольников`:'встроенная тесселяция не найдена'}</small></div><strong>${geo?'OK':'—'}</strong></div><div class="feature"><i>◉</i><div>Precision TESS Recognition<small>${G?`${esc(G.counts.planes)} плоск. · ${esc(G.counts.cylinders)} цилиндр. · ${esc(G.counts.holes)} отверст.`:'ожидает 3D mesh'}</small></div><strong>${G?'OK':'—'}</strong></div><div class="feature"><i>⌾</i><div>Patterns / PCD / coaxial<small>${G?`${esc(G.counts.holePatterns||0)} групп отверстий · ${esc(G.counts.coaxialGroups||0)} соосных ступеней`:'ожидает распознавание'}</small></div><strong>${G?'OK':'—'}</strong></div><div class="feature"><i>▱</i><div>Adaptive Drawing Layout<small>${G?'автовыбор AXIAL/GENERAL · разрезы · позиции · BOM':'ожидает распознавание геометрии'}</small></div><strong>${G?'OK':'—'}</strong></div><div class="feature"><i>◎</i><div>Точный B-Rep<small>Parasolid topology ещё не декодируется; TESS-размеры требуют VERIFY</small></div><strong>—</strong></div>`;
 }
 
 
 function dimensionSymbol(x){
   const label=String(x?.label||'');
-  if(label.startsWith('Ø')||x?.source==='TESS_CYLINDER')return 'Ø';
-  if(label.startsWith('L')||x?.source==='TESS_CYLINDER_LENGTH')return 'L';
+  if(label.startsWith('Ø')||x?.source==='TESS_CYLINDER'||x?.source==='TESS_PCD')return x?.source==='TESS_PCD'?'PCD Ø':'Ø';
+  if(x?.source==='TESS_HOLE_PATTERN')return `${x.count||''}×Ø`;
+  if(label.startsWith('L')||x?.source==='TESS_CYLINDER_LENGTH'||x?.source==='TESS_PLANE_SPACING')return 'L';
   return ['X','Y','Z'].includes(label)?label:'';
 }
-function dimensionSourceLabel(x){return x.source==='TESS_CYLINDER'?'распознано: цилиндр':x.source==='TESS_CYLINDER_LENGTH'?'распознано: длина':'габарит TESS'}
+function dimensionSourceLabel(x){return x.source==='TESS_CYLINDER'?'распознано: цилиндр':x.source==='TESS_CYLINDER_LENGTH'?'распознано: длина':x.source==='TESS_HOLE_PATTERN'?(x.pcd?`группа отверстий · PCD Ø${fmt(x.pcd,2)}`:'повторяющиеся отверстия'):x.source==='TESS_PCD'?'распознано: делительная окружность':x.source==='TESS_PLANE_SPACING'?'распознано: параллельные плоскости':'габарит TESS'}
 function renderDimensions(){
   const r=state.rec,d=state.dimensions||[];
   if(r.geometryAvailable!==false&&d.length){
@@ -126,14 +127,14 @@ function renderDimensions(){
     $('#dimensionsTable').innerHTML=d.map(x=>{const sym=dimensionSymbol(x);return `<tr><td>${esc(x.type)}</td><td>${esc(sym||x.label)}</td><td>${fmt(x.value)} ${esc(x.unit||'mm')}</td><td>${Math.round((x.confidence||0)*100)}% · ${esc(x.source||'TESS')}</td></tr>`}).join('');
   }else{
     $('#dimensionCards').classList.add('empty');$('#dimensionCards').textContent='Встроенная геометрия не найдена — габариты недоступны.';
-    $('#dimensionsTable').innerHTML='<tr><td colspan="4">v1.0.3 строит производственный сборочный лист и чертёж выбранной детали из FaceTessellations. TESS-размеры требуют VERIFY.</td></tr>';
+    $('#dimensionsTable').innerHTML='<tr><td colspan="4">v1.1.0 строит адаптивный сборочный лист и чертёж выбранной детали из FaceTessellations. TESS-размеры требуют VERIFY.</td></tr>';
   }
 }
 
 
 function renderAssembly(){
   const r=state.rec,root=$('#assemblyBody'),n=r.nativeAssembly,components=n.components||[],geo=r.geometryAvailable!==false;
-  root.innerHTML=`<div class="assembly-head"><div><h3>${esc(n.root)} · SLDASM</h3><p class="hint">Production Drawing Core v1.0.3 · ${esc(n.container)} · полностью локально</p></div><span class="adapter-badge">SLDASM</span></div><div class="assembly-grid"><section><h4>Дерево компонентов</h4><ul class="component-tree"><li><b>▾ ${esc(n.root)}</b><ul>${components.map(c=>`<li ${c.instances?.[0]?`data-component-id="${esc(c.instances[0])}" data-component-name="${esc(c.name)}" class="selectable-component"`:''}><span>${c.type==='assembly'?'▣':'◫'} ${esc(c.name)}</span><em>×${c.count}</em><small>${esc(c.file)}</small></li>`).join('')||'<li class="muted">Компоненты не извлечены из этого контейнера</li>'}</ul></li></ul></section><section><h4>BOM · ${components.length} позиций</h4><div class="bom bom-wide"><div class="head">№</div><div class="head">Компонент</div><div class="head">Кол-во</div>${components.map((c,i)=>`<div>${i+1}</div><div><b>${esc(c.name)}</b><small>${esc(c.file)} · ${c.type==='assembly'?'подсборка':'деталь'}</small></div><div>${c.count}</div>`).join('')}</div></section></div><div class="assembly-actions"><button data-open-assembly-drawing>Открыть производственный сборочный чертёж</button><button data-open-part-drawing ${state.selectedComponentId?'':'disabled'}>Чертёж выбранной детали</button></div><div class="native-note"><b>v1.0.3:</b> структура/BOM читаются из нативных потоков SLDASM. <b>3D:</b> ${geo?`собрано из FaceTessellations с матрицами вхождений (${esc(n.mappedOccurrences||0)} размещено / ${esc(n.triangles||0)} треугольников сцены).`:'встроенная тесселяция в файле не найдена.'} Производственный Drawing Core строит чистые проекции, секущие виды, позиции и спецификацию. Точный Parasolid B-Rep пока не декодируется.</div>`;
+  root.innerHTML=`<div class="assembly-head"><div><h3>${esc(n.root)} · SLDASM</h3><p class="hint">Precision Drawing Core v1.1.0 · ${esc(n.container)} · полностью локально</p></div><span class="adapter-badge">SLDASM</span></div><div class="assembly-grid"><section><h4>Дерево компонентов</h4><ul class="component-tree"><li><b>▾ ${esc(n.root)}</b><ul>${components.map(c=>`<li ${c.instances?.[0]?`data-component-id="${esc(c.instances[0])}" data-component-name="${esc(c.name)}" class="selectable-component"`:''}><span>${c.type==='assembly'?'▣':'◫'} ${esc(c.name)}</span><em>×${c.count}</em><small>${esc(c.file)}</small></li>`).join('')||'<li class="muted">Компоненты не извлечены из этого контейнера</li>'}</ul></li></ul></section><section><h4>BOM · ${components.length} позиций</h4><div class="bom bom-wide"><div class="head">№</div><div class="head">Компонент</div><div class="head">Кол-во</div>${components.map((c,i)=>`<div>${i+1}</div><div><b>${esc(c.name)}</b><small>${esc(c.file)} · ${c.type==='assembly'?'подсборка':'деталь'}</small></div><div>${c.count}</div>`).join('')}</div></section></div><div class="assembly-actions"><button data-open-assembly-drawing>Открыть производственный сборочный чертёж</button><button data-open-part-drawing ${state.selectedComponentId?'':'disabled'}>Чертёж выбранной детали</button></div><div class="native-note"><b>v1.1.0:</b> структура/BOM читаются из нативных потоков SLDASM. <b>3D:</b> ${geo?`собрано из FaceTessellations с матрицами вхождений (${esc(n.mappedOccurrences||0)} размещено / ${esc(n.triangles||0)} треугольников сцены).`:'встроенная тесселяция в файле не найдена.'} Precision Drawing Core автоматически выбирает профиль AXIAL/GENERAL, строит проекции, разрезы, позиции и спецификацию. Точный Parasolid B-Rep пока не декодируется.</div>`;
 }
 
 

@@ -59,7 +59,7 @@ function detectCylinder(g,data,diag){
   const ev=smallestEigenVector(M),trace=M[0][0]+M[1][1]+M[2][2],ratio=trace>0?Math.max(0,ev.value/trace):1;if(ratio>.025)return null;
   const axis=canonicalAxis(ev.vector),{u,v}=perpendicularBasis(axis),p2=points.map(p=>[dot(p,u),dot(p,v)]),fit=circleFit2D(p2);if(!fit||!Number.isFinite(fit.radius))return null;
   const tol=Math.max(.03,fit.radius*.0025,diag*.00008);if(fit.rms>tol||fit.radius<.1)return null;
-  const ts=points.map(p=>dot(p,axis)),tmin=Math.min(...ts),tmax=Math.max(...ts),length=tmax-tmin;if(length<.03)return null;
+  let tmin=Infinity,tmax=-Infinity;for(const p of points){const t=dot(p,axis);if(t<tmin)tmin=t;if(t>tmax)tmax=t}const length=tmax-tmin;if(length<.03)return null;
   const mid=(tmin+tmax)/2,axisPoint=add(add(mul(u,fit.cx),mul(v,fit.cy)),mul(axis,mid));
   let align=0,count=0;for(let i=0;i<points.length;i++){const t=dot(points[i],axis),onAxis=add(axisPoint,mul(axis,t-mid)),rad=norm(sub(points[i],onAxis));if(len(rad)>.5){align+=dot(normals[i],rad);count++}}
   align=count?align/count:0;const coverage=angularCoverage(p2,fit.cx,fit.cy),full=coverage>Math.PI*1.72;
@@ -77,7 +77,7 @@ export function recognizeTessellationGeometry(rec,{maxFeatures=500}={}){
   for(const p of planes){const id=p.componentId||'RAW',g=components.get(id)||{componentId:id,name:p.instance?.name||id,planes:0,cylinders:0,holes:0,outerCylinders:0};g.planes++;components.set(id,g)}
   for(const c of cylinders){const id=c.componentId||'RAW',g=components.get(id)||{componentId:id,name:c.instance?.name||id,planes:0,cylinders:0,holes:0,outerCylinders:0};g.cylinders++;if(c.type==='hole')g.holes++;if(c.type==='outer')g.outerCylinders++;components.set(id,g)}
   const all=[...planes,...cylinders],featureConfidence=all.length?all.reduce((s,x)=>s+x.confidence,0)/all.length:0;
-  return{version:'0.8.0',source:'FaceTessellations',heuristic:true,facesAnalyzed:groups.length,trianglesAnalyzed:faces.length,planes,cylinders,holes,outerCylinders,axes,components:[...components.values()],counts:{faceGroups:groups.length,planes:planes.length,cylinders:cylinders.length,holes:holes.length,outerCylinders:outerCylinders.length,axes:axes.length},confidence:featureConfidence,dominantAxis:axes[0]?.axis||null,note:'Геометрия распознана эвристически из тесселяции. Размеры требуют VERIFY до появления точного B-Rep.'};
+  return{version:'1.0.1',source:'FaceTessellations',heuristic:true,facesAnalyzed:groups.length,trianglesAnalyzed:faces.length,planes,cylinders,holes,outerCylinders,axes,components:[...components.values()],counts:{faceGroups:groups.length,planes:planes.length,cylinders:cylinders.length,holes:holes.length,outerCylinders:outerCylinders.length,axes:axes.length},confidence:featureConfidence,dominantAxis:axes[0]?.axis||null,note:'Геометрия распознана эвристически из тесселяции. Размеры требуют VERIFY до появления точного B-Rep.'};
 }
 export function recognitionDimensions(rec,recognition,{limit=18}={}){
   const out=[];const b=rec?.bounds?.size||[];for(let i=0;i<3;i++)if(Number.isFinite(b[i]))out.push({type:'Габарит',label:['X','Y','Z'][i],value:b[i],unit:'mm',confidence:.96,source:'TESS_BOUNDS'});

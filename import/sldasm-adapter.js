@@ -75,22 +75,31 @@ function parseComponentTreeXml(xml,fileName){
   const rootCandidates=modelOrder.filter(m=>m.attrs.swFileRef===rootFile.id&&m.refs.length);
   const rootModel=rootCandidates.find(m=>String(m.attrs.swConfigurationId)==='0')||rootCandidates[0]||null;
   const occurrences=[];
-  function walk(model,parentId,parentTransform,depth,pathGuard){
-    if(!model||depth>24)return;
-    const guard=new Set(pathGuard||[]);if(guard.has(model.id))return;guard.add(model.id);
-    for(let i=0;i<model.refs.length;i++){
-      const ref=model.refs[i];if(String(ref.swSuppressed||'NO').toUpperCase()==='YES')continue;
-      const childModel=models.get(ref.swModelRef),file=files.get(childModel?.attrs?.swFileRef)||{};
-      const local=ref.transform||identity4();
-      // SolidWorks stores these 4×4 transforms for row-vector multiplication.
-      // Child local → parent is `local`; parent → world is `parentTransform`.
-      const world=mul4(local,parentTransform);
-      const name=ref.swName||ref.swComponentName||childModel?.attrs?.swName||baseName(file.path)||`Component ${i+1}`;
-      const occ={id:`SW-${occurrences.length+1}`,name,parent:parentId||'SW-ROOT',modelRef:ref.swModelRef||'',file:file.path||'',fileName:baseName(file.path||''),type:file.type==='assembly'?'assembly':'part',configuration:ref.swConfigurationName||childModel?.attrs?.swConfigurationName||'',referenceNumber:ref.swReferenceNumber||'',hidden:String(ref.swHidden||'NO').toUpperCase()==='YES',excludeFromBOM:String(ref.swExcludeFromBOM||'NO').toUpperCase()==='YES',localTransform:local,transform:world};
-      occurrences.push(occ);if(childModel?.refs?.length)walk(childModel,occ.id,world,depth+1,guard);
+  // Iterative traversal: avoids browser call-stack limits on deeply/nestingly referenced assemblies.
+  // A path-local guard still prevents cycles in malformed/native reference graphs.
+  if(rootModel){
+    const stack=[{model:rootModel,parentId:'SW-ROOT',parentTransform:identity4(),depth:0,pathGuard:new Set()}];
+    while(stack.length){
+      const node=stack.pop();
+      const model=node.model;if(!model||node.depth>64)continue;
+      const guard=new Set(node.pathGuard||[]);if(guard.has(model.id))continue;guard.add(model.id);
+      const children=[];
+      for(let i=0;i<model.refs.length;i++){
+        const ref=model.refs[i];if(String(ref.swSuppressed||'NO').toUpperCase()==='YES')continue;
+        const childModel=models.get(ref.swModelRef),file=files.get(childModel?.attrs?.swFileRef)||{};
+        const local=ref.transform||identity4();
+        // SolidWorks stores these 4×4 transforms for row-vector multiplication.
+        // Child local → parent is `local`; parent → world is `parentTransform`.
+        const world=mul4(local,node.parentTransform);
+        const name=ref.swName||ref.swComponentName||childModel?.attrs?.swName||baseName(file.path)||`Component ${i+1}`;
+        const occ={id:`SW-${occurrences.length+1}`,name,parent:node.parentId||'SW-ROOT',modelRef:ref.swModelRef||'',file:file.path||'',fileName:baseName(file.path||''),type:file.type==='assembly'?'assembly':'part',configuration:ref.swConfigurationName||childModel?.attrs?.swConfigurationName||'',referenceNumber:ref.swReferenceNumber||'',hidden:String(ref.swHidden||'NO').toUpperCase()==='YES',excludeFromBOM:String(ref.swExcludeFromBOM||'NO').toUpperCase()==='YES',localTransform:local,transform:world};
+        occurrences.push(occ);
+        if(childModel?.refs?.length)children.push({model:childModel,parentId:occ.id,parentTransform:world,depth:node.depth+1,pathGuard:guard});
+      }
+      // Reverse push preserves the same visible traversal order as the old recursive DFS.
+      for(let i=children.length-1;i>=0;i--)stack.push(children[i]);
     }
   }
-  if(rootModel)walk(rootModel,'SW-ROOT',identity4(),0,new Set());
   const grouped=new Map();
   for(const o of occurrences){if(o.excludeFromBOM)continue;const key=(o.fileName||o.name).toLowerCase();const g=grouped.get(key)||{file:o.fileName||baseName(o.file),name:stemName(o.fileName||o.name),path:o.file,type:o.type,count:0,instances:[]};g.count++;g.instances.push(o.id);grouped.set(key,g)}
   const components=[...grouped.values()].sort((a,b)=>a.type.localeCompare(b.type)||a.name.localeCompare(b.name,undefined,{numeric:true,sensitivity:'base'}));
@@ -234,7 +243,7 @@ export async function parseSLDASM(input,fileName='assembly.SLDASM'){
   const parseMs=(typeof performance!=='undefined'?performance.now():Date.now())-t0;
   const unmappedModels=(mapping.leafModels||[]).filter(m=>!mapping.templates.has(m.id)).map(m=>({id:m.id,name:m.name,file:m.fileName}));
   return{
-    format:'SLDASM',adapter:'sldasm-native-production-drawing-v1.0.0',geometryAvailable,isAssembly:true,unit:'mm',factor:1,bounds,counts,
+    format:'SLDASM',adapter:'sldasm-native-production-drawing-v1.0.1',geometryAvailable,isAssembly:true,unit:'mm',factor:1,bounds,counts,
     faces,edges:[],surfaces:[],radii:[],boltPatterns:[],instances:occurrences,occurrences,products,components,
     nativeAssembly:{root,file:baseName(fileName),componentCount:components.length,occurrenceCount:occurrences.length,components,container:modern?'SolidWorks 2015+ chunk container':'SolidWorks binary',signatureHex:[...bytes.slice(0,8)].map(b=>b.toString(16).padStart(2,'0')).join(' '),streamCount:streamNames.length,streamNames,swVersion:tree?.swVersion||'',geometryMode:geometryAvailable?(placed.faces.length?'FaceTessellations + assembly transforms':'FaceTessellations local fallback'):'none',tessellationStreams:modern?[...modern.streams.keys()].filter(n=>n.startsWith('FaceTessellations/')):[],faceBlocks:faceBlocks.length,sourceTriangles:rawTriangles.length,triangles:faces.length,nativeScaleToMm:1000,mappedModels:mapping.assignments.length,mappedOccurrences:placed.placedOccurrences.length,totalLeafModels:mapping.leafModels.length,unmappedModels,transformMapping:mapping.assignments,confidence:tree?'decoded-xml+transforms+tess-recognition-ready':(components.length?'legacy-scan':'format-recognized'),note:geometryAvailable?(placed.faces.length?'3D собрано локально из FaceTessellations с применением матриц каждого вхождения SLDASM. Это графическая тесселяция SolidWorks, не точный Parasolid B-Rep.':'3D показано как локальная FaceTessellations-геометрия без картирования вхождений.'):'SLDASM структура прочитана, но в файле не найдено декодируемой встроенной тесселяции.'},
     tessellation:{mode:geometryAvailable?'triangle-strips':'none',faceBlocks,sourceStreams:modern?[...modern.streams.keys()].filter(n=>/^FaceTessellations\/\d+-\d+-\d+$/i.test(n)):[],nativeUnit:'m',scaleToMm:1000,assemblyTransformsApplied:placed.faces.length>0,mappedModels:mapping.assignments.length,mappedOccurrences:placed.placedOccurrences.length},

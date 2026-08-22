@@ -1,8 +1,8 @@
-const CACHE='rozfood-engineering-studio-v1.2.0-verified-geometry-core';
+const CACHE='rozfood-engineering-studio-v1.3.0-drawing-editor-core';
 const ASSETS=[
-  './','./index.html','./styles.css?v=1.2.0','./app.js?v=1.2.0','./import-worker.js',
+  './','./index.html','./styles.css?v=1.3.0','./app.js?v=1.3.0','./import-worker.js',
   './import/sldasm-adapter.js','./core/tess-recognition.js','./core/math3d.js',
-  './drawing/drawing-engine.js','./drawing/tess-recognition-drawing.js','./drawing/assembly-production-sheet-v120.js',
+  './drawing/drawing-engine.js','./drawing/tess-recognition-drawing.js','./drawing/assembly-production-sheet-v130.js','./drawing/drawing-editor.js',
   './viewer/wireframe-viewer.js','./manifest.webmanifest',
   './icons/icon-64.png','./icons/icon-96.png','./icons/icon-180.png','./icons/icon-192.png','./icons/icon-512.png'
 ];

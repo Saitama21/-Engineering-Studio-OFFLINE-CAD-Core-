@@ -1,5 +1,5 @@
 import {WireframeViewer} from './viewer/wireframe-viewer.js';
-import {drawingFromRecognition,renderDrawing,serializeDrawing} from './drawing/drawing-engine.js';
+import {drawingFromRecognition,renderDrawing,serializeDrawing,renderNativeAssemblyDrawing} from './drawing/drawing-engine.js';
 
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const viewer=new WireframeViewer($('#viewerCanvas'));
@@ -69,17 +69,31 @@ function renderAll(){
   $('#solidCount').textContent=geo?r.counts.solids:'—';$('#faceCount').textContent=geo?r.counts.faces:'—';$('#edgeCount').textContent=geo?r.counts.edges:'—';
   $('#unitLabel').textContent=geo?r.unit:'—';$('#unitFactor').textContent=geo?fmt(r.factor):'—';$('#cylinderCount').textContent=geo?r.counts.cylinders:'—';$('#bsplineCount').textContent=geo?r.counts.bsplines:'—';
   const conf=d.length?Math.round(d.reduce((s,x)=>s+x.confidence,0)/d.length*100):0;$('#confidence').textContent=geo?(conf+'%'):'META';
-  renderTree();renderFeatures();renderDimensions();renderAssembly();renderCurrentDrawing();$('#exportDrawingBtn').disabled=!geo;
+  renderTree();renderFeatures();renderDimensions();renderAssembly();updateDrawingModeAvailability();renderCurrentDrawing();$('#exportDrawingBtn').disabled=!r;
 }
 
 function renderCurrentDrawing(){
   if(!state.rec)return;
   if(state.rec.geometryAvailable===false){
-    const n=state.rec.nativeAssembly;$('#drawingSvg').setAttribute('viewBox','0 0 1200 760');$('#drawingSvg').innerHTML=`<rect width="1200" height="760" fill="${document.documentElement.dataset.theme==='dark'?'#0d1522':'#fff'}"/><g font-family="-apple-system,BlinkMacSystemFont,system-ui" text-anchor="middle"><text x="600" y="300" font-size="38" font-weight="700" fill="${document.documentElement.dataset.theme==='dark'?'#f4f7fb':'#17202b'}">SLDASM: структура сборки импортирована</text><text x="600" y="355" font-size="22" fill="#6e7781">${esc(n?.componentCount||0)} позиций · ${esc(n?.occurrenceCount||0)} вхождений</text><text x="600" y="405" font-size="19" fill="#6e7781">Нативный адаптер читает ссылки компонентов и BOM полностью офлайн.</text><text x="600" y="445" font-size="19" fill="#6e7781">Для геометрии B-Rep и авточертежа загрузите STEP-экспорт этой сборки.</text></g>`;return;
+    const n=state.rec.nativeAssembly;
+    if(state.drawingMode==='assemblyDetailed'){
+      const projectName=$('#projectName')?.textContent||state.fileName?.replace(/\.[^.]+$/,'')||n?.root||'SLDASM';
+      renderNativeAssemblyDrawing($('#drawingSvg'),n,{projectName,fileName:state.fileName,theme:document.documentElement.dataset.theme});
+      return;
+    }
+    $('#drawingSvg').setAttribute('viewBox','0 0 1200 760');$('#drawingSvg').innerHTML=`<rect width="1200" height="760" fill="${document.documentElement.dataset.theme==='dark'?'#0d1522':'#fff'}"/><g font-family="-apple-system,BlinkMacSystemFont,system-ui" text-anchor="middle"><text x="600" y="285" font-size="36" font-weight="700" fill="${document.documentElement.dataset.theme==='dark'?'#f4f7fb':'#17202b'}">SLDASM: структура сборки импортирована</text><text x="600" y="340" font-size="22" fill="#6e7781">${esc(n?.componentCount||0)} позиций · ${esc(n?.occurrenceCount||0)} вхождений</text><text x="600" y="390" font-size="18" fill="#6e7781">Для BOM-листа выберите режим «Сборочный детализированный».</text><text x="600" y="430" font-size="18" fill="#6e7781">Для геометрических проекций нужен STEP-экспорт этой сборки.</text></g>`;return;
   }
   const projectName=$('#projectName')?.textContent||state.fileName?.replace(/\.[^.]+$/,'')||'Новая модель';
   const drawing=drawingFromRecognition(state.rec,state.dimensions,{projectName,fileName:state.fileName,mode:state.drawingMode});
   renderDrawing($('#drawingSvg'),drawing,{mode:state.drawingMode,projectName,fileName:state.fileName,theme:document.documentElement.dataset.theme});
+}
+
+function updateDrawingModeAvailability(){
+  const btn=document.querySelector('[data-drawing-mode="assemblyDetailed"]');if(!btn||!state.rec)return;
+  const available=!!state.rec.isAssembly;btn.disabled=!available;btn.title=available?'Детализированный сборочный чертёж + BOM':'Доступно после загрузки STEP/SLDASM сборки';
+  if(!available&&state.drawingMode==='assemblyDetailed'){
+    state.drawingMode='production';$$('[data-drawing-mode]').forEach(x=>x.classList.toggle('active',x.dataset.drawingMode==='production'));
+  }
 }
 
 function renderTree(){
@@ -92,10 +106,12 @@ function renderAssembly(){
   const r=state.rec,root=$('#assemblyBody');if(!r.isAssembly){root.innerHTML=`<h3>Одиночная деталь</h3><p>PRODUCT: <b>${esc(r.products[0]?.name||state.fileName||'—')}</b></p><p class="hint">Загрузите STEP-сборку или SLDASM: здесь будет дерево компонентов и BOM.</p>`;return}
   if(r.geometryAvailable===false){
     const n=r.nativeAssembly,components=n.components||[];
-    root.innerHTML=`<div class="assembly-head"><div><h3>${esc(n.root)} · SLDASM</h3><p class="hint">Native Reference Adapter v0.1 · ${esc(n.container)} · полностью локально</p></div><span class="adapter-badge">SLDASM</span></div><div class="assembly-grid"><section><h4>Дерево компонентов</h4><ul class="component-tree"><li><b>▾ ${esc(n.root)}</b><ul>${components.map(c=>`<li><span>${c.type==='assembly'?'▣':'◫'} ${esc(c.name)}</span><em>×${c.count}</em><small>${esc(c.file)}</small></li>`).join('')||'<li class="muted">Ссылки компонентов не найдены</li>'}</ul></li></ul></section><section><h4>BOM · ${components.length} позиций</h4><div class="bom bom-wide"><div class="head">№</div><div class="head">Компонент</div><div class="head">Кол-во</div>${components.map((c,i)=>`<div>${i+1}</div><div><b>${esc(c.name)}</b><small>${esc(c.file)} · ${c.type==='assembly'?'подсборка':'деталь'}</small></div><div>${c.count}</div>`).join('')}</div></section></div><div class="native-note"><b>Что уже работает:</b> чтение SLDASM как OLE/CFB, поиск ссылок SLDPRT/SLDASM, распознавание экземпляров и формирование BOM. <b>Ограничение:</b> это эвристический reference-level импорт; закрытая B-Rep геометрия SolidWorks пока не декодируется. Для 3D и авточертежа используйте STEP.</div>`;return
+    root.innerHTML=`<div class="assembly-head"><div><h3>${esc(n.root)} · SLDASM</h3><p class="hint">Native Reference Adapter v0.1 · ${esc(n.container)} · полностью локально</p></div><span class="adapter-badge">SLDASM</span></div><div class="assembly-grid"><section><h4>Дерево компонентов</h4><ul class="component-tree"><li><b>▾ ${esc(n.root)}</b><ul>${components.map(c=>`<li><span>${c.type==='assembly'?'▣':'◫'} ${esc(c.name)}</span><em>×${c.count}</em><small>${esc(c.file)}</small></li>`).join('')||'<li class="muted">Ссылки компонентов не найдены</li>'}</ul></li></ul></section><section><h4>BOM · ${components.length} позиций</h4><div class="bom bom-wide"><div class="head">№</div><div class="head">Компонент</div><div class="head">Кол-во</div>${components.map((c,i)=>`<div>${i+1}</div><div><b>${esc(c.name)}</b><small>${esc(c.file)} · ${c.type==='assembly'?'подсборка':'деталь'}</small></div><div>${c.count}</div>`).join('')}</div></section></div><div class="assembly-actions"><button data-open-assembly-drawing>Открыть сборочный чертёж</button></div><div class="native-note"><b>Что уже работает:</b> чтение SLDASM как OLE/CFB, поиск ссылок SLDPRT/SLDASM, распознавание экземпляров и формирование BOM. <b>Ограничение:</b> это эвристический reference-level импорт; закрытая B-Rep геометрия SolidWorks пока не декодируется. Для 3D и авточертежа используйте STEP.</div>`;return
   }
-  const occ=r.occurrences;const groups=[...occ.reduce((m,o)=>{const k=o.child||o.name||o.id;const g=m.get(k)||{name:o.name||('Component '+o.id),count:0};g.count++;m.set(k,g);return m},new Map()).values()];root.innerHTML=`<h3>STEP-сборка · ${occ.length} вхождений · ${groups.length} позиций</h3><p class="hint">Количество извлечено из PRODUCT / NEXT_ASSEMBLY_USAGE_OCCURRENCE.</p><div class="bom"><div class="head">№</div><div class="head">Компонент</div><div class="head">Кол-во</div>${groups.map((o,i)=>`<div>${i+1}</div><div>${esc(o.name)}</div><div>${o.count}</div>`).join('')}</div>`
+  const occ=r.occurrences;const groups=[...occ.reduce((m,o)=>{const k=o.child||o.name||o.id;const g=m.get(k)||{name:o.name||('Component '+o.id),count:0};g.count++;m.set(k,g);return m},new Map()).values()];root.innerHTML=`<h3>STEP-сборка · ${occ.length} вхождений · ${groups.length} позиций</h3><p class="hint">Количество извлечено из PRODUCT / NEXT_ASSEMBLY_USAGE_OCCURRENCE.</p><div class="bom"><div class="head">№</div><div class="head">Компонент</div><div class="head">Кол-во</div>${groups.map((o,i)=>`<div>${i+1}</div><div>${esc(o.name)}</div><div>${o.count}</div>`).join('')}</div><div class="assembly-actions"><button data-open-assembly-drawing>Открыть сборочный чертёж</button></div>`
 }
+
+$('#assemblyBody').addEventListener('click',e=>{const btn=e.target.closest('[data-open-assembly-drawing]');if(!btn)return;state.drawingMode='assemblyDetailed';$$('[data-drawing-mode]').forEach(x=>x.classList.toggle('active',x.dataset.drawingMode==='assemblyDetailed'));switchTab('drawing');renderCurrentDrawing();log('Открыт режим: Сборочный детализированный.');});
 
 function switchTab(name){$$('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));$$('.view').forEach(v=>v.classList.remove('active-view'));$(`#${name}View`).classList.add('active-view');$('#viewTitle').textContent={model:'3D модель',drawing:'Инженерный авточертёж',dimensions:'Распознанные размеры',assembly:'Состав сборки'}[name];$('#modelActions').classList.toggle('hidden',name!=='model');$('#drawingActions').classList.toggle('hidden',name!=='drawing');if(name==='model')viewer.draw();if(name==='drawing'&&state.rec)renderCurrentDrawing()}
 $$('.tab').forEach(b=>b.addEventListener('click',()=>switchTab(b.dataset.tab)));
@@ -105,7 +121,7 @@ $('#fitBtn').addEventListener('click',()=>viewer.fit());$('#wireBtn').addEventLi
 $('#fileInput').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;await importFile(f);e.target.value=''})
 const drop=$('#dropZone');['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('drag')}));['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('drag')}));drop.addEventListener('drop',async e=>{const f=e.dataTransfer.files[0];if(f)await importFile(f)});
 $$('[data-sample]').forEach(b=>b.addEventListener('click',async()=>{const url=b.dataset.sample;const res=await fetch(url);const text=await res.text();importText(text,url.split('/').pop(),text.length)}));
-$('#exportBtn').addEventListener('click',()=>{if(!state.rec)return;const report={version:'0.4.1',generated:new Date().toISOString(),file:state.fileName,drawingMode:state.drawingMode,counts:state.rec.counts,bounds:state.rec.bounds,dimensions:state.dimensions,boltPatterns:state.rec.boltPatterns,products:state.rec.products,occurrences:state.rec.occurrences,nativeAssembly:state.rec.nativeAssembly||null};const blob=new Blob([JSON.stringify(report,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(state.fileName||'model').replace(/\.[^.]+$/,'')+'-engineering-report.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)});
+$('#exportBtn').addEventListener('click',()=>{if(!state.rec)return;const report={version:'0.5.0',generated:new Date().toISOString(),file:state.fileName,drawingMode:state.drawingMode,counts:state.rec.counts,bounds:state.rec.bounds,dimensions:state.dimensions,boltPatterns:state.rec.boltPatterns,products:state.rec.products,occurrences:state.rec.occurrences,nativeAssembly:state.rec.nativeAssembly||null};const blob=new Blob([JSON.stringify(report,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(state.fileName||'model').replace(/\.[^.]+$/,'')+'-engineering-report.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)});
 $('#exportDrawingBtn').addEventListener('click',()=>{if(!state.rec)return;renderCurrentDrawing();const svg=serializeDrawing($('#drawingSvg'));const blob=new Blob([svg],{type:'image/svg+xml;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(state.fileName||'model').replace(/\.[^.]+$/,'')+'-drawing-'+state.drawingMode+'.svg';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);log('Чертёж экспортирован в SVG локально.');});
 function esc(x){return String(x??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 initTheme();

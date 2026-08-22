@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import {parseSTEP} from './import/step-parser.js';
 import {recognizeSTEP,makeDimensionSet} from './recognition/feature-recognizer.js';
-import {drawingFromRecognition,renderDrawing} from './drawing/drawing-engine.js';
+import {drawingFromRecognition,renderDrawing,renderNativeAssemblyDrawing} from './drawing/drawing-engine.js';
 import {parseSLDASM} from './import/sldasm-adapter.js';
 
 const expected={
@@ -33,9 +33,10 @@ for(const name of Object.keys(expected)){
   // Render smoke test without a browser DOM.
   const fakeSvg={attrs:{},innerHTML:'',setAttribute(k,v){this.attrs[k]=v}};
   renderDrawing(fakeSvg,drawing,{mode:'production',projectName:name,fileName:name,theme:'light'});
-  if(!fakeSvg.innerHTML.includes('ROZFOOD ENGINEERING STUDIO'))throw new Error(name+': title block missing');
-  if(!fakeSvg.innerHTML.includes('Drawing Core v0.4.1'))throw new Error(name+': drawing version missing');
+  if(!fakeSvg.innerHTML.includes('ROZFOOD')||!fakeSvg.innerHTML.includes('ENGINEERING STUDIO'))throw new Error(name+': title block missing');
+  if(!fakeSvg.innerHTML.includes('Drawing Core v0.5.0'))throw new Error(name+': drawing version missing');
   if(name==='sample_flange.step'&&!fakeSvg.innerHTML.includes('PCD'))throw new Error(name+': PCD annotation missing');
+  if(name==='sample_assembly.step'){const assemblySvg={attrs:{},innerHTML:'',setAttribute(k,v){this.attrs[k]=v}};renderDrawing(assemblySvg,drawing,{mode:'assemblyDetailed',projectName:name,fileName:name,theme:'light'});if(!assemblySvg.innerHTML.includes('СПЕЦИФИКАЦИЯ · BOM'))throw new Error(name+': detailed assembly BOM missing');if(!assemblySvg.innerHTML.includes('Сборочный детализированный'))throw new Error(name+': assembly mode missing');if(!assemblySvg.innerHTML.includes('>2<'))throw new Error(name+': position bubbles/BOM positions missing');}
 }
 
 // Native SLDASM reference-level adapter smoke test.
@@ -48,4 +49,7 @@ const bom=new Map(sw.nativeAssembly.components.map(c=>[c.name,c.count]));
 if(bom.get('Bracket')!==2||bom.get('Bolt')!==3||bom.get('SubFrame')!==1)throw new Error('SLDASM: bad BOM '+JSON.stringify([...bom]));
 if(sw.nativeAssembly.container!=='CFB/OLE')throw new Error('SLDASM: CFB signature not recognized');
 console.log('SLDASM adapter',JSON.stringify({components:sw.nativeAssembly.componentCount,occurrences:sw.nativeAssembly.occurrenceCount,bom:[...bom]},null,2));
-console.log('All v0.4.1 Drawing Core + SLDASM Adapter tests passed.');
+const nativeSvg={attrs:{},innerHTML:'',setAttribute(k,v){this.attrs[k]=v}};
+renderNativeAssemblyDrawing(nativeSvg,sw.nativeAssembly,{projectName:'Machine',fileName:'Machine.SLDASM',theme:'light'});
+if(!nativeSvg.innerHTML.includes('SLDASM BOM')||!nativeSvg.innerHTML.includes('v0.5.0'))throw new Error('SLDASM: assembly drawing sheet missing');
+console.log('All v0.5.0 Full Drawing Core + Assembly Detail tests passed.');

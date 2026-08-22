@@ -5,7 +5,7 @@
   "display": "standalone",
   "background_color": "#f5f7fa",
   "theme_color": "#ffffff",
-  "description": "Offline SLDASM assembly CAD with native tessellation 3D, geometry recognition and A2-style production drawing layout with views, sections, BOM and title block",
+  "description": "Offline SLDASM assembly CAD with native tessellation 3D, geometry recognition and reference-like production drawing layout with longitudinal/end views, A-A/B-B sections, C/D details, BOM and title block",
   "icons": [
     {
       "src": "icons/icon-192.png",

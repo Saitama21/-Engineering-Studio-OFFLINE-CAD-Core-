@@ -3,7 +3,7 @@ import {parseSLDASM} from './import/sldasm-adapter.js';
 import {renderNativeAssemblyDrawing} from './drawing/drawing-engine.js';
 import {recognizeTessellationGeometry,recognitionDimensions} from './core/tess-recognition.js';
 import {renderTessRecognitionDrawing} from './drawing/tess-recognition-drawing.js';
-import {renderAssemblyProductionSheet} from './drawing/assembly-production-sheet-v081.js';
+import {renderAssemblyProductionSheet} from './drawing/assembly-production-sheet-v090.js';
 
 function u32(n){const b=Buffer.alloc(4);b.writeUInt32LE(n>>>0);return b}
 function f32(n){const b=Buffer.alloc(4);b.writeFloatLE(n);return b}
@@ -43,7 +43,7 @@ if(Math.abs(sw.bounds.size[0]-100)>1e-3||Math.abs(sw.bounds.size[1]-100)>1e-3)th
 if(sw.faces.some(f=>!f.componentId))throw new Error('placed faces must carry componentId');
 const svg={attrs:{},innerHTML:'',setAttribute(k,v){this.attrs[k]=v}};
 renderNativeAssemblyDrawing(svg,sw.nativeAssembly,{projectName:'Machine',fileName:'Machine.SLDASM',theme:'light'});
-if(!svg.innerHTML.includes('SLDASM BOM')||!svg.innerHTML.includes('v0.8.1'))throw new Error('SLDASM drawing/version missing');
+if(!svg.innerHTML.includes('SLDASM BOM')||!svg.innerHTML.includes('v0.9.0'))throw new Error('SLDASM drawing/version missing');
 let rejected=false;try{await parseSLDASM(Buffer.alloc(8),'Part.SLDPRT')}catch{rejected=true}if(!rejected)throw new Error('SLDPRT must be rejected');
 // Synthetic cylindrical tessellation: one full outer cylinder.
 const cylFaces=[];
@@ -58,5 +58,5 @@ const svg2={attrs:{},innerHTML:'',setAttribute(k,v){this.attrs[k]=v}};renderTess
 const sheet={attrs:{},innerHTML:'',setAttribute(k,v){this.attrs[k]=v}};
 sw.recognition=recognizeTessellationGeometry(sw);
 renderAssemblyProductionSheet(sheet,sw,{projectName:'Machine',fileName:'Machine.SLDASM',theme:'light'});
-if(!sheet.innerHTML.includes('Спецификация')||!sheet.innerHTML.includes('A–A')||sheet.attrs.viewBox!=='0 0 1400 990')throw new Error('v0.8.1 production sheet missing');
-console.log('All v0.8.1 Drawing Layout tests passed.',{components:sw.nativeAssembly.componentCount,occurrences:sw.nativeAssembly.occurrenceCount,mapped:sw.nativeAssembly.mappedOccurrences,sourceTriangles:sw.counts.sourceTriangles,sceneTriangles:sw.counts.triangles,bounds:sw.bounds});
+if(!sheet.innerHTML.includes('Спецификация')||!sheet.innerHTML.includes('A–A')||!sheet.innerHTML.includes('B–B')||!sheet.innerHTML.includes('Analog Drawing Core v0.9.0')||sheet.attrs.viewBox!=='0 0 1400 990')throw new Error('v0.9.0 analog production sheet missing');
+console.log('All v0.9.0 Analog Drawing tests passed.',{components:sw.nativeAssembly.componentCount,occurrences:sw.nativeAssembly.occurrenceCount,mapped:sw.nativeAssembly.mappedOccurrences,sourceTriangles:sw.counts.sourceTriangles,sceneTriangles:sw.counts.triangles,bounds:sw.bounds});

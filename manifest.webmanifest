@@ -5,7 +5,7 @@
   "display": "standalone",
   "background_color": "#f5f7fa",
   "theme_color": "#ffffff",
-  "description": "Offline native SLDASM assembly intake, structure/BOM analysis and detailed assembly drawing",
+  "description": "Offline SLDASM assembly CAD with native tessellation 3D, local plane/cylinder/hole recognition, dimensions, drawing and BOM",
   "icons": [
     {
       "src": "icons/icon-192.png",

@@ -1,6 +1,8 @@
 import {deflateRawSync} from 'node:zlib';
 import {parseSLDASM} from './import/sldasm-adapter.js';
 import {renderNativeAssemblyDrawing} from './drawing/drawing-engine.js';
+import {recognizeTessellationGeometry,recognitionDimensions} from './core/tess-recognition.js';
+import {renderTessRecognitionDrawing} from './drawing/tess-recognition-drawing.js';
 
 function u32(n){const b=Buffer.alloc(4);b.writeUInt32LE(n>>>0);return b}
 function f32(n){const b=Buffer.alloc(4);b.writeFloatLE(n);return b}
@@ -40,6 +42,16 @@ if(Math.abs(sw.bounds.size[0]-100)>1e-3||Math.abs(sw.bounds.size[1]-100)>1e-3)th
 if(sw.faces.some(f=>!f.componentId))throw new Error('placed faces must carry componentId');
 const svg={attrs:{},innerHTML:'',setAttribute(k,v){this.attrs[k]=v}};
 renderNativeAssemblyDrawing(svg,sw.nativeAssembly,{projectName:'Machine',fileName:'Machine.SLDASM',theme:'light'});
-if(!svg.innerHTML.includes('SLDASM BOM')||!svg.innerHTML.includes('v0.7.1'))throw new Error('SLDASM drawing/version missing');
+if(!svg.innerHTML.includes('SLDASM BOM')||!svg.innerHTML.includes('v0.8.0'))throw new Error('SLDASM drawing/version missing');
 let rejected=false;try{await parseSLDASM(Buffer.alloc(8),'Part.SLDPRT')}catch{rejected=true}if(!rejected)throw new Error('SLDPRT must be rejected');
-console.log('All v0.7.1 SLDASM Assembly Transform tests passed.',{components:sw.nativeAssembly.componentCount,occurrences:sw.nativeAssembly.occurrenceCount,mapped:sw.nativeAssembly.mappedOccurrences,sourceTriangles:sw.counts.sourceTriangles,sceneTriangles:sw.counts.triangles,bounds:sw.bounds});
+// Synthetic cylindrical tessellation: one full outer cylinder.
+const cylFaces=[];
+const N=32,R=20,L=100;
+for(let i=0;i<N;i++){const a=i*2*Math.PI/N,b=(i+1)*2*Math.PI/N;const p0=[R*Math.cos(a),0,R*Math.sin(a)],p1=[R*Math.cos(b),0,R*Math.sin(b)],p2=[R*Math.cos(b),L,R*Math.sin(b)],p3=[R*Math.cos(a),L,R*Math.sin(a)];const n0=[Math.cos(a),0,Math.sin(a)],n1=[Math.cos(b),0,Math.sin(b)];cylFaces.push({loops:[[p0,p1,p2]],normals:[n0,n1,n1],componentId:'C1',modelId:'M1',tessFaceId:1,sourceStream:'FaceTessellations/T'});cylFaces.push({loops:[[p0,p2,p3]],normals:[n0,n1,n0],componentId:'C1',modelId:'M1',tessFaceId:1,sourceStream:'FaceTessellations/T'});}
+const cylRec={faces:cylFaces,bounds:{size:[40,100,40]}};
+const recognition=recognizeTessellationGeometry(cylRec);
+if(recognition.counts.cylinders<1)throw new Error('cylinder recognition missing '+JSON.stringify(recognition.counts));
+const rc=recognition.cylinders.find(x=>Math.abs(x.diameter-40)<.2&&Math.abs(x.length-100)<.2);if(!rc)throw new Error('cylinder dimensions wrong '+JSON.stringify(recognition.cylinders.slice(0,3)));
+const dims=recognitionDimensions({bounds:{size:[40,100,40]}},recognition);if(!dims.some(x=>x.source==='TESS_CYLINDER'))throw new Error('recognized cylinder dimension missing');
+const svg2={attrs:{},innerHTML:'',setAttribute(k,v){this.attrs[k]=v}};renderTessRecognitionDrawing(svg2,{bounds:{min:[-20,0,-20],max:[20,100,20],size:[40,100,40]},recognition},{projectName:'Cylinder',fileName:'Cylinder.SLDASM',theme:'light'});if(!svg2.innerHTML.includes('TESS GEOMETRY RECOGNITION')||!svg2.innerHTML.includes('Ø40.000'))throw new Error('recognition drawing missing');
+console.log('All v0.8.0 Tess Geometry Recognition tests passed.',{components:sw.nativeAssembly.componentCount,occurrences:sw.nativeAssembly.occurrenceCount,mapped:sw.nativeAssembly.mappedOccurrences,sourceTriangles:sw.counts.sourceTriangles,sceneTriangles:sw.counts.triangles,bounds:sw.bounds});

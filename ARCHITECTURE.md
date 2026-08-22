@@ -1,15 +1,15 @@
-# ROZFOOD Engineering Studio v0.7.1 architecture
+# ROZFOOD Engineering Studio v0.8.0 architecture
 
-`SLDASM → Native Streams → COMPINSTANCETREE + FaceTessellations → Model/Tess mapping → Occurrence transforms → 3D scene → BOM / Drawing`
+`SLDASM → Native Streams → COMPINSTANCETREE + FaceTessellations → Model/Tess mapping → Assembly transforms → 3D scene → Tess Geometry Recognition → Dimensions / Drawing / BOM`
 
-## Import pipeline
+## Recognition pipeline
 
-1. `sldasm-adapter.js` декодирует SolidWorks 2015+ chunk container.
-2. `COMPINSTANCETREE` даёт модели, BOM, вложенность и `swTransform`.
-3. `FaceTessellations/*` декодируются в локальные triangle-strip templates.
-4. Локальные шаблоны сопоставляются с leaf-моделями по `swBoundingBox`, порядку моделей и границам tess-потоков.
-5. Матрицы вхождений накапливаются в row-vector convention: `local × parentWorld`.
-6. Каждая копия детали переносится в мировые координаты и получает `componentId`.
-7. Viewer сортирует треугольники по глубине, поддерживает solid/wireframe и выбор детали.
+`core/tess-recognition.js` группирует треугольники по исходной tess-face и компоненту.
 
-Все вычисления выполняются в браузере локально.
+- Plane detector: coherence нормалей + RMS отклонения от средней плоскости.
+- Cylinder detector: матрица распределения нормалей → ось → проекция в поперечную плоскость → circle fit → радиус/диаметр/длина.
+- Inner/outer classification: знак направления нормали относительно радиального вектора.
+- Axis clustering: близкие цилиндрические оси объединяются в доминирующие направления.
+- Drawing: `drawing/tess-recognition-drawing.js` строит TESS/VERIFY главный и торцевой виды с базовыми размерами.
+
+Все вычисления выполняются локально в браузере.

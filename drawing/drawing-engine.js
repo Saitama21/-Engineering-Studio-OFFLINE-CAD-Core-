@@ -92,7 +92,7 @@ export function renderDrawing(svg,drawing,options={}){
 
   if(mode.notes&&!mode.assembly) s+=renderNotes(drawing,{x:55,y:598,w:640,h:50},colors);
   s+=renderTitleBlock({projectName,fileName,unit:drawing.unit,mode:mode.label,rec:drawing.rec},{x:720,y:610,w:440,h:112},colors);
-  s+=`<text x="55" y="715" fill="${colors.muted}" font-family="system-ui,-apple-system,sans-serif" font-size="11">ROZFOOD ENGINEERING STUDIO · Drawing Core v0.7.1 · SLDASM FaceTessellations локально</text>`;
+  s+=`<text x="55" y="715" fill="${colors.muted}" font-family="system-ui,-apple-system,sans-serif" font-size="11">ROZFOOD ENGINEERING STUDIO · Drawing Core v0.8.0 · SLDASM FaceTessellations локально</text>`;
   svg.innerHTML=s;
 }
 
@@ -248,7 +248,7 @@ function renderTitleBlock(meta,box,c){
   s+=row('ЕДИНИЦЫ',meta.unit,y+33,{mono:true,size:10});
   s+=row('МАСШТАБ','AUTO',y+55,{mono:true,size:10});
   s+=row('СТАТУС','AUTO / VERIFY',y+77,{blue:true,size:9.3});
-  s+=row('ЯДРО','v0.7.1',y+99,{mono:true,size:8.8});
+  s+=row('ЯДРО','v0.8.0',y+99,{mono:true,size:8.8});
   s+='</g>';
   return s;
 }
@@ -392,7 +392,7 @@ export function renderNativeAssemblyDrawing(svg,nativeAssembly,options={}){
   s+=`<g font-family="system-ui"><rect x="${x}" y="${y}" width="${w}" height="${Math.min(520,70+comps.length*rh)}" fill="#fff" stroke="${c.ink}"/><text x="${x+18}" y="${y+27}" fill="${c.title}" font-size="14" font-weight="800">СПЕЦИФИКАЦИЯ · ${escapeXml(n.root||projectName)}</text><line x1="${x}" y1="${y+42}" x2="${x+w}" y2="${y+42}" stroke="${c.ink}"/><line x1="${c1}" y1="${y+42}" x2="${c1}" y2="${y+Math.min(520,70+comps.length*rh)}" stroke="${c.ink}"/><line x1="${c2}" y1="${y+42}" x2="${c2}" y2="${y+Math.min(520,70+comps.length*rh)}" stroke="${c.ink}"/>`;
   s+=`<text x="${x+30}" y="${y+62}" text-anchor="middle" fill="${c.muted}" font-size="9">ПОЗ.</text><text x="${c1+10}" y="${y+62}" fill="${c.muted}" font-size="9">КОМПОНЕНТ / ФАЙЛ</text><text x="${x+w-45}" y="${y+62}" text-anchor="middle" fill="${c.muted}" font-size="9">КОЛ.</text>`;
   let yy=y+72;comps.forEach((q,i)=>{s+=`<line x1="${x}" y1="${yy}" x2="${x+w}" y2="${yy}" stroke="${c.construction}" stroke-width=".7"/><text x="${x+30}" y="${yy+20}" text-anchor="middle" fill="${c.ink}" font-size="10" font-weight="700">${i+1}</text><text x="${c1+10}" y="${yy+14}" fill="${c.ink}" font-size="10.5" font-weight="700">${escapeXml(q.name)}</text><text x="${c1+10}" y="${yy+25}" fill="${c.muted}" font-size="8.5">${escapeXml(q.file||'')}</text><text x="${x+w-45}" y="${yy+20}" text-anchor="middle" fill="${c.ink}" font-size="10.5" font-weight="700">${q.count}</text>`;yy+=rh});s+='</g>';
-  s+=`<text x="55" y="665" fill="${c.muted}" font-family="system-ui" font-size="11">ROZFOOD ENGINEERING STUDIO · Drawing Core v0.7.1 · SLDASM Assembly Transform Decoder</text>`;
+  s+=`<text x="55" y="665" fill="${c.muted}" font-family="system-ui" font-size="11">ROZFOOD ENGINEERING STUDIO · Drawing Core v0.8.0 · SLDASM Tess Recognition</text>`;
   s+=renderTitleBlock({projectName,fileName:options.fileName||'',unit:'—',mode:'Сборочный детализированный',rec:{counts:{faces:0,edges:0}}},{x:720,y:610,w:440,h:112},c);
   svg.innerHTML=s;
 }

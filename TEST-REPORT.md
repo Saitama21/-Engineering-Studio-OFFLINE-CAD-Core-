@@ -1,25 +1,7 @@
-# Test report · v0.7.1 SLDASM Assembly Transforms
+# Test report · v0.8.0 Tessellation Geometry Recognition
 
-## Synthetic transform test
+`npm test` — PASS.
 
-PASS:
-- `.SLDASM` принят;
-- `.SLDPRT` отклонён;
-- локальная плоскость 100×100 мм с translation `(200,300,400)` мм оказалась в ожидаемых мировых координатах;
-- `componentId` присвоен сценовым треугольникам;
-- Drawing Core маркирован v0.7.1.
+Проверяется: SLDASM импорт, BOM, assembly transforms, запрет standalone SLDPRT, синтетический цилиндр Ø40 × 100, восстановление диаметра/длины, TESS dimensions, TESS Drawing и сборочный Drawing Core v0.8.0.
 
-## Real SLDASM validation
-
-Файл: `Сборка Барабана Глобино.SLDASM`
-
-PASS:
-- 17 BOM-позиций;
-- 31 вхождение;
-- 14/14 leaf-моделей сопоставлены;
-- 28 leaf-вхождений размещены;
-- 117 tess-блоков;
-- 16 926 исходных triangles;
-- 25 962 scene triangles;
-- итоговый bounding box ≈ 476 × 1225 × 476 мм;
-- длинная локальная ось/вал больше не остаётся в локальной X-ориентации: матрица сборки применена.
+Реальный файл барабана: 17 позиций, 31 вхождение, 28 размещено, 117 tess-блоков, 25 962 сценовых треугольника, ~476 × 1225 × 476 мм, 209 face groups, 86 planes, 67 cylinders, 36 holes, 8 axis clusters.

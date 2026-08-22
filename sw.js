@@ -1,4 +1,4 @@
-const CACHE='rozfood-engineering-studio-v1.4.1-smooth-drawing-nav';
+const CACHE='rozfood-engineering-studio-v1.4.1-viewport-lod-r2';
 const ASSETS=[
   './','./index.html','./styles.css?v=1.4.1','./app.js?v=1.4.1','./import-worker.js',
   './import/sldasm-adapter.js','./core/tess-recognition.js','./core/math3d.js',

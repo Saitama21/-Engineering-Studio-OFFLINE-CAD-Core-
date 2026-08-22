@@ -178,3 +178,8 @@ html[data-theme="dark"] .drawing-workspace{background:linear-gradient(145deg,#10
 .drawing-workspace.advanced-edit-nav.tool-zoom::after{content:'Зум · клик — приблизить · Shift+клик — отдалить · колесо — плавный зум'}
 .drawing-workspace.advanced-edit-nav.tool-pan::after{content:'Панорама · тянуть ЛКМ · колесо — зум'}
 @media(max-width:760px){#drawingActions .drawing-tool-palette{width:100%;display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}.drawing-tool-palette button{width:100%;min-width:0;white-space:normal}}
+
+/* v1.4.1 viewport LOD: keep heavy 2D navigation responsive by skipping
+   off-screen / lower-detail geometry only while the user is navigating. */
+.drawing-workspace svg .drawing-nav-culled{display:none!important}
+.drawing-workspace.drawing-nav-interacting svg{pointer-events:none}

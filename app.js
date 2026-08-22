@@ -6,7 +6,7 @@ import {DrawingEditor} from './drawing/drawing-editor.js';
 import {DrawingNavigator} from './drawing/drawing-navigator.js';
 
 const APP_VERSION='1.4.1';
-const BUILD_LABEL='ADVANCED EDIT TOOLBAR + SMOOTH DRAWING NAV';
+const BUILD_LABEL='ADVANCED EDIT TOOLBAR + 2D VIEWPORT LOD';
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const viewer=new WireframeViewer($('#viewerCanvas'));
 viewer.onSelect=(id,instance)=>{

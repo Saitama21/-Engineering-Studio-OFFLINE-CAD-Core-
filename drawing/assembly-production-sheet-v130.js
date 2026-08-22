@@ -105,13 +105,19 @@ function outerRingStations(rec,axis,D){
 function referenceAxialChain(rec,axis,D){
   const st=outerRingStations(rec,axis,D),seg=[];for(let i=0;i<st.length-1;i++){const d=st[i+1]-st[i];if(d>5&&d<500)seg.push(d)}return{stations:st,segments:seg};
 }
-function renderReferenceStamp(projectName,scale,box){const x=box.x,y=box.y,w=box.w,h=box.h;return`<g stroke="#111" fill="none" stroke-width=".7" font-family="Arial,sans-serif"><rect x="${x}" y="${y}" width="${w}" height="${h}"/><line x1="${x+165}" y1="${y}" x2="${x+165}" y2="${y+h}"/><line x1="${x+310}" y1="${y}" x2="${x+310}" y2="${y+h}"/><line x1="${x}" y1="${y+26}" x2="${x+w}" y2="${y+26}"/><line x1="${x}" y1="${y+54}" x2="${x+w}" y2="${y+54}"/><line x1="${x+310}" y1="${y+42}" x2="${x+w}" y2="${y+42}"/><text x="${x+8}" y="${y+12}" fill="#111" stroke="none" font-size="6.7">Изм.  Лист  № докум.  Подп.  Дата</text><text x="${x+8}" y="${y+24}" fill="#111" stroke="none" font-size="6.7">Разраб.  ROZFOOD</text><text x="${x+176}" y="${y+19}" fill="#111" stroke="none" font-size="12" font-weight="700">${esc(projectName)} СБ</text><text x="${x+176}" y="${y+47}" fill="#111" stroke="none" font-size="8.5">Сборочный чертёж</text><text x="${x+320}" y="${y+12}" fill="#111" stroke="none" font-size="6.7">Лит.   Масса   Масштаб</text><text x="${x+w-16}" y="${y+38}" text-anchor="end" fill="#111" stroke="none" font-size="12" font-weight="700">${scale}</text><text x="${x+320}" y="${y+51}" fill="#111" stroke="none" font-size="6.7">Лист 1   Листов 1</text><text x="${x+176}" y="${y+69}" fill="#111" stroke="none" font-size="7.3">ROZFOOD ENGINEERING STUDIO · VERIFIED GEOMETRY CORE</text></g>`}
+function renderReferenceStamp(projectName,scale,box,subtitle='Сборочный чертёж'){const x=box.x,y=box.y,w=box.w,h=box.h;return`<g stroke="#111" fill="none" stroke-width=".7" font-family="Arial,sans-serif"><rect x="${x}" y="${y}" width="${w}" height="${h}"/><line x1="${x+165}" y1="${y}" x2="${x+165}" y2="${y+h}"/><line x1="${x+310}" y1="${y}" x2="${x+310}" y2="${y+h}"/><line x1="${x}" y1="${y+26}" x2="${x+w}" y2="${y+26}"/><line x1="${x}" y1="${y+54}" x2="${x+w}" y2="${y+54}"/><line x1="${x+310}" y1="${y+42}" x2="${x+w}" y2="${y+42}"/><text x="${x+8}" y="${y+12}" fill="#111" stroke="none" font-size="6.7">Изм.  Лист  № докум.  Подп.  Дата</text><text x="${x+8}" y="${y+24}" fill="#111" stroke="none" font-size="6.7">Разраб.  ROZFOOD</text><text x="${x+176}" y="${y+19}" fill="#111" stroke="none" font-size="12" font-weight="700">${esc(projectName)} СБ</text><text x="${x+176}" y="${y+47}" fill="#111" stroke="none" font-size="8.5">${esc(subtitle)}</text><text x="${x+320}" y="${y+12}" fill="#111" stroke="none" font-size="6.7">Лит.   Масса   Масштаб</text><text x="${x+w-16}" y="${y+38}" text-anchor="end" fill="#111" stroke="none" font-size="12" font-weight="700">${scale}</text><text x="${x+320}" y="${y+51}" fill="#111" stroke="none" font-size="6.7">Лист 1   Листов 1</text><text x="${x+176}" y="${y+69}" fill="#111" stroke="none" font-size="7.3">ROZFOOD ENGINEERING STUDIO · VERIFIED GEOMETRY CORE</text></g>`}
 
 function boundsPrincipalAxis(rec){const sz=rec?.bounds?.size||[1,1,1];let i=0;if(sz[1]>sz[i])i=1;if(sz[2]>sz[i])i=2;const a=[0,0,0];a[i]=1;return a}
-function assemblyProfile(rec){
+export function assemblyDrawingProfile(rec){
   const sz=[...(rec?.bounds?.size||[1,1,1])],ord=sz.map((v,i)=>({v,i})).sort((a,b)=>b.v-a.v),major=ord[0]?.v||1,second=ord[1]?.v||1,majorAxis=[0,0,0];majorAxis[ord[0]?.i||0]=1;
-  const cyl=(rec?.recognition?.outerCylinders||[]).find(c=>c.full&&c.diameter>second*.55&&c.length>major*.38&&Math.abs(dot(norm(c.axis),majorAxis))>.96);
-  return major/Math.max(second,1)>1.72&&cyl?'AXIAL':'GENERAL';
+  const elongation=major/Math.max(second,1);
+  const candidates=(rec?.recognition?.outerCylinders||[]).filter(c=>c.full&&c.diameter>second*.62&&c.length>major*.45&&Math.abs(dot(norm(c.axis),majorAxis))>.975).sort((a,b)=>(b.area||0)-(a.area||0));
+  const cyl=candidates[0]||null;
+  // Safety-first classification: ambiguous assemblies stay GENERAL. A single pipe, wheel or pin
+  // inside a frame must never turn the whole drawing into an axial/cylindrical template.
+  const axial=elongation>=2.05&&!!cyl;
+  const confidence=axial?clamp(.72+Math.min(.2,(elongation-2.05)*.18)+Math.min(.08,(cyl.confidence||0)*.08),0,1):clamp(.82+Math.min(.16,Math.max(0,2.05-elongation)*.12),0,1);
+  return{profile:axial?'AXIAL':'GENERAL',confidence,elongation,major,second,cylinderEvidence:!!cyl,reason:axial?'elongated envelope + dominant coaxial cylindrical body':'safe GENERAL fallback: no strong whole-assembly axial evidence'};
 }
 function worldView(kind){if(kind==='top')return{px:[1,0,0],py:[0,1,0],dir:[0,0,1]};if(kind==='side')return{px:[0,1,0],py:[0,0,1],dir:[1,0,0]};if(kind==='iso'){const px=norm([.82,.57,0]),py=norm([-.25,.36,.9]);return{px,py,dir:norm(cross(px,py))}}return{px:[1,0,0],py:[0,0,1],dir:[0,1,0]}}
 function patternNotes(rec,limit=5){
@@ -120,8 +126,16 @@ function patternNotes(rec,limit=5){
 function precisionNotes(rec,limit=5){
   const out=[];for(const g of rec?.recognition?.coaxialGroups||[]){if(g.diameters?.length<2)continue;out.push(`Соосные Ø ${g.diameters.slice(0,4).map(d=>fmt(d,2)).join(' / ')}`);if(out.length>=limit)break}return out;
 }
-function renderGeneralAssemblySheet(svg,rec,{projectName='SLDASM',fileName='',theme='light'}={}){
-  const maxDim=Math.max(...(rec.bounds?.size||[1])),scale=chooseScale(maxDim),bomCount=rec?.nativeAssembly?.components?.length||0,large=bomCount>32;
+function renderGeneralAssemblySheet(svg,rec,{projectName='SLDASM',fileName='',theme='light',mode='assemblyDetailed'}={}){
+  const maxDim=Math.max(...(rec.bounds?.size||[1])),scale=chooseScale(maxDim),bomCount=rec?.nativeAssembly?.components?.length||0;
+  const cfg=({
+    sketch:{label:'КАРКАС',section:false,dimensions:false,notes:false,positions:false,bom:false,iso:true},
+    working:{label:'РАБОЧИЙ',section:true,dimensions:true,notes:false,positions:false,bom:false,iso:true},
+    production:{label:'ПРОИЗВОДСТВЕННЫЙ',section:true,dimensions:true,notes:true,positions:false,bom:false,iso:true},
+    control:{label:'КОНТРОЛЬНЫЙ',section:false,dimensions:true,notes:true,positions:false,bom:false,iso:false},
+    assemblyDetailed:{label:'СБОРОЧНЫЙ',section:true,dimensions:true,notes:true,positions:true,bom:true,iso:true}
+  })[mode]||{label:String(mode||'GENERAL').toUpperCase(),section:true,dimensions:true,notes:true,positions:false,bom:false,iso:true};
+  const large=mode==='assemblyDetailed'&&bomCount>32;
   const W=large?1980:1400,H=large?1400:990,front=worldView('front'),top=worldView('top'),side=worldView('side'),iso=worldView('iso');
   const main=large?{x:100,y:70,w:900,h:520}:{x:88,y:62,w:640,h:330};
   const topBox=large?{x:100,y:700,w:900,h:410}:{x:88,y:455,w:640,h:285};
@@ -135,26 +149,30 @@ function renderGeneralAssemblySheet(svg,rec,{projectName='SLDASM',fileName='',th
   s+=`<g stroke="#111" fill="none" stroke-width=".55" font-family="Arial" font-size="6"><rect x="30" y="28" width="36" height="${H-56}"/><line x1="30" y1="${Math.round(H*.23)}" x2="66" y2="${Math.round(H*.23)}"/><line x1="30" y1="${Math.round(H*.48)}" x2="66" y2="${Math.round(H*.48)}"/><text transform="rotate(-90 48 ${Math.round(H*.18)})" x="48" y="${Math.round(H*.18)}" fill="#111" stroke="none">Перв. примен.</text><text transform="rotate(-90 48 ${Math.round(H*.43)})" x="48" y="${Math.round(H*.43)}" fill="#111" stroke="none">Справ. №</text></g>`;
   const mv=renderMesh(rec,front,main,{width:.68}),tv=renderMesh(rec,top,topBox,{width:.62}),sv=renderMesh(rec,side,sideBox,{width:.68}),iv=renderMesh(rec,iso,isoBox,{width:.5});
   const cut=renderSection(rec,front,sectionBox,rec.bounds.center,[0,1,0],{width:.72,hatch:true}),sm=renderMesh(rec,front,sectionBox,{width:.56,detail:true});
-  s+=viewLabel('Главный вид',main.x+4,main.y-9)+mv.svg+viewLabel('Вид сверху',topBox.x+4,topBox.y-9)+tv.svg+viewLabel('Вид справа',sideBox.x+4,sideBox.y-9)+sv.svg+viewLabel('Изометрия',isoBox.x+4,isoBox.y-9)+iv.svg+viewLabel('A–A',sectionBox.x+4,sectionBox.y-9,'разрез')+sm.svg+cut.svg;
+  s+=viewLabel('Главный вид',main.x+4,main.y-9)+mv.svg+viewLabel('Вид сверху',topBox.x+4,topBox.y-9)+tv.svg+viewLabel('Вид справа',sideBox.x+4,sideBox.y-9)+sv.svg;
+  if(cfg.iso)s+=viewLabel('Изометрия',isoBox.x+4,isoBox.y-9)+iv.svg;
+  if(cfg.section)s+=viewLabel('A–A',sectionBox.x+4,sectionBox.y-9,'разрез')+sm.svg+cut.svg;
   const c1=mv.map.P(rec.bounds.center),c2=tv.map.P(rec.bounds.center),c3=sv.map.P(rec.bounds.center);
   s+=`<g stroke="#666" stroke-width=".55" stroke-dasharray="10 3 2 3"><line x1="${main.x}" y1="${c1[1]}" x2="${main.x+main.w}" y2="${c1[1]}"/><line x1="${c1[0]}" y1="${main.y}" x2="${c1[0]}" y2="${main.y+main.h}"/><line x1="${topBox.x}" y1="${c2[1]}" x2="${topBox.x+topBox.w}" y2="${c2[1]}"/><line x1="${sideBox.x}" y1="${c3[1]}" x2="${sideBox.x+sideBox.w}" y2="${c3[1]}"/></g>`;
   const [sx,sy,sz]=rec.bounds.size;
-  s+=dimH(main.x+18,main.x+main.w-18,main.y+main.h+24,main.y+main.h-8,fmt(sx,1));
-  s+=dimV(main.x-14,main.y+16,main.y+main.h-16,main.x+5,fmt(sz,1));
-  s+=dimV(topBox.x-14,topBox.y+16,topBox.y+topBox.h-16,topBox.x+5,fmt(sy,1));
-  s+=renderPositions(rec,rec.nativeAssembly,front,mv.map,main);
+  if(cfg.dimensions){
+    s+=dimH(main.x+18,main.x+main.w-18,main.y+main.h+24,main.y+main.h-8,fmt(sx,1));
+    s+=dimV(main.x-14,main.y+16,main.y+main.h-16,main.x+5,fmt(sz,1));
+    s+=dimV(topBox.x-14,topBox.y+16,topBox.y+topBox.h-16,topBox.x+5,fmt(sy,1));
+  }
+  if(cfg.positions)s+=renderPositions(rec,rec.nativeAssembly,front,mv.map,main);
   const notes=[...patternNotes(rec,6),...precisionNotes(rec,4)].slice(0,9),notesX=large?1565:1060,notesY=large?520:385;
-  if(notes.length){s+=`<g font-family="Arial" fill="#111"><text x="${notesX}" y="${notesY}" font-size="10.5" font-weight="700">Распознанные элементы</text>`;notes.forEach((t,i)=>s+=`<text x="${notesX}" y="${notesY+18+i*15}" font-size="8.5">${esc(t)}</text>`);s+='</g>'}
-  s+=`<g stroke="#111" fill="#111" font-family="Arial" font-size="10"><line x1="${main.x+12}" y1="${c1[1]}" x2="${main.x+main.w-12}" y2="${c1[1]}" stroke-dasharray="12 4 2 4"/><path d="M${main.x+18} ${c1[1]}l10 -5v10zM${main.x+main.w-18} ${c1[1]}l-10 -5v10z"/><text x="${main.x+4}" y="${c1[1]-8}" stroke="none">A</text><text x="${main.x+main.w-6}" y="${c1[1]-8}" stroke="none">A</text></g>`;
-  s+=renderBOM(rec.nativeAssembly,bomBox);
-  s+=renderReferenceStamp(projectName,scale,stampBox);
-  s+=`<g font-family="Arial" fill="#111"><text x="${large?105:95}" y="${H-42}" font-size="7" fill="#555">ROZFOOD ENGINEERING STUDIO · Drawing Editor Core v1.3.0 · GENERAL · ${large?'A1':'A2'} · ${esc(fileName)}</text><text x="${W-145}" y="${bomBox.y-12}" font-size="9" text-anchor="end">VERIFIED TESS</text></g>`;
+  if(cfg.notes&&notes.length){s+=`<g font-family="Arial" fill="#111"><text x="${notesX}" y="${notesY}" font-size="10.5" font-weight="700">Проверяемые элементы</text>`;notes.forEach((t,i)=>s+=`<text x="${notesX}" y="${notesY+18+i*15}" font-size="8.5">${esc(t)}</text>`);s+='</g>'}
+  if(cfg.section)s+=`<g stroke="#111" fill="#111" font-family="Arial" font-size="10"><line x1="${main.x+12}" y1="${c1[1]}" x2="${main.x+main.w-12}" y2="${c1[1]}" stroke-dasharray="12 4 2 4"/><path d="M${main.x+18} ${c1[1]}l10 -5v10zM${main.x+main.w-18} ${c1[1]}l-10 -5v10z"/><text x="${main.x+4}" y="${c1[1]-8}" stroke="none">A</text><text x="${main.x+main.w-6}" y="${c1[1]-8}" stroke="none">A</text></g>`;
+  if(cfg.bom)s+=renderBOM(rec.nativeAssembly,bomBox);
+  s+=renderReferenceStamp(projectName,scale,stampBox,mode==='assemblyDetailed'?'Сборочный чертёж':`${cfg.label[0]+cfg.label.slice(1).toLowerCase()} чертёж`);
+  s+=`<g font-family="Arial" fill="#111"><text x="${large?105:95}" y="${H-42}" font-size="7" fill="#555">ROZFOOD ENGINEERING STUDIO · Drawing Intelligence v1.3.1 · GENERAL · ${cfg.label} · ${large?'A1':'A2'} · ${esc(fileName)}</text><text x="${W-145}" y="${bomBox.y-12}" font-size="9" text-anchor="end">VERIFIED TESS</text></g>`;
   svg.innerHTML=s;
 }
 
-export function renderAssemblyProductionSheet(svg,rec,{projectName='SLDASM',fileName='',theme='light'}={}){
+export function renderAssemblyProductionSheet(svg,rec,{projectName='SLDASM',fileName='',theme='light',mode='assemblyDetailed'}={}){
   if(!rec?.faces?.length){svg.setAttribute('viewBox','0 0 1400 990');svg.innerHTML='<rect width="1400" height="990" fill="#fff"/><text x="700" y="490" text-anchor="middle" font-family="Arial" font-size="28">Нет тесселяционной геометрии</text>';return}
-  const profile=assemblyProfile(rec);rec.drawingProfile=profile;if(profile==='GENERAL'){renderGeneralAssemblySheet(svg,rec,{projectName,fileName,theme});return}
+  const profileInfo=assemblyDrawingProfile(rec),profile=profileInfo.profile;rec.drawingProfile=profile;rec.drawingProfileConfidence=profileInfo.confidence;if(profile==='GENERAL'){renderGeneralAssemblySheet(svg,rec,{projectName,fileName,theme,mode});return}
   const axis=dominantAxis(rec),{u,v}=basis(axis),D=Math.max(...rec.bounds.size.filter((_,i)=>Math.abs(axis[i])<.8)),L=Math.max(...rec.bounds.size),scale=chooseScale(L),stations=bestStations(rec,axis,D),chain=referenceAxialChain(rec,axis,D),body=bodyEnvelope(rec,axis,D);
   svg.setAttribute('viewBox','0 0 1400 990');svg.setAttribute('role','img');svg.setAttribute('aria-label',`Сборочный чертёж ${projectName}`);
   let s=`<rect width="1400" height="990" fill="${theme==='dark'?'#e9edf2':'#eef1f4'}"/><rect x="14" y="12" width="1372" height="966" rx="2" fill="#fff"/><rect x="30" y="28" width="1340" height="934" fill="none" stroke="#111" stroke-width="1.15"/>`;
@@ -193,7 +211,7 @@ export function renderAssemblyProductionSheet(svg,rec,{projectName='SLDASM',file
   s+=`<text x="${isoSolid.x+8}" y="${isoSolid.y+isoSolid.h+10}" font-family="Arial" font-size="9" fill="#111">Сборочный изометрический вид</text><text x="${isoExpl.x+8}" y="${isoExpl.y+isoExpl.h+10}" font-family="Arial" font-size="9" fill="#111">B–B (1:5)</text>`;
   s+=renderBOM(rec.nativeAssembly,{x:1030,y:625,w:325,h:205});
   s+=renderReferenceStamp(projectName,scale,{x:860,y:845,w:495,h:95});
-  s+=`<g font-family="Arial" fill="#111"><text x="95" y="944" font-size="7" fill="#555">ROZFOOD ENGINEERING STUDIO · Drawing Editor Core v1.3.0 · ${esc(fileName)}</text><text x="1240" y="612" font-size="9" text-anchor="end">VERIFIED TESS</text></g>`;
+  s+=`<g font-family="Arial" fill="#111"><text x="95" y="944" font-size="7" fill="#555">ROZFOOD ENGINEERING STUDIO · Drawing Intelligence v1.3.1 · ${esc(fileName)}</text><text x="1240" y="612" font-size="9" text-anchor="end">VERIFIED TESS</text></g>`;
   svg.innerHTML=s;
 }
 
@@ -203,10 +221,35 @@ function renderPartStamp(projectName,scale,box){
   return `<g stroke="#111" fill="none" stroke-width=".7" font-family="Arial,sans-serif"><rect x="${x}" y="${y}" width="${w}" height="${h}"/><line x1="${x+165}" y1="${y}" x2="${x+165}" y2="${y+h}"/><line x1="${x+310}" y1="${y}" x2="${x+310}" y2="${y+h}"/><line x1="${x}" y1="${y+26}" x2="${x+w}" y2="${y+26}"/><line x1="${x}" y1="${y+54}" x2="${x+w}" y2="${y+54}"/><line x1="${x+310}" y1="${y+42}" x2="${x+w}" y2="${y+42}"/><text x="${x+8}" y="${y+12}" fill="#111" stroke="none" font-size="6.7">Изм.  Лист  № докум.  Подп.  Дата</text><text x="${x+8}" y="${y+24}" fill="#111" stroke="none" font-size="6.7">Разраб.  ROZFOOD</text><text x="${x+176}" y="${y+19}" fill="#111" stroke="none" font-size="12" font-weight="700">${esc(projectName)}</text><text x="${x+176}" y="${y+47}" fill="#111" stroke="none" font-size="8.5">Деталь · автоматический чертёж</text><text x="${x+320}" y="${y+12}" fill="#111" stroke="none" font-size="6.7">Лит.   Масса   Масштаб</text><text x="${x+w-16}" y="${y+38}" text-anchor="end" fill="#111" stroke="none" font-size="12" font-weight="700">${scale}</text><text x="${x+320}" y="${y+51}" fill="#111" stroke="none" font-size="6.7">Лист 1   Листов 1</text><text x="${x+176}" y="${y+69}" fill="#111" stroke="none" font-size="7.3">ROZFOOD ENGINEERING STUDIO · VERIFIED GEOMETRY CORE</text></g>`;
 }
 
+function partDrawingProfile(part){
+  const sz=[...(part?.bounds?.size||[1,1,1])],ord=sz.map((v,i)=>({v,i})).sort((a,b)=>b.v-a.v),major=ord[0]?.v||1,second=ord[1]?.v||1,axis=[0,0,0];axis[ord[0]?.i||0]=1;
+  const cyl=(part?.recognition?.outerCylinders||[]).find(c=>c.full&&c.length>major*.55&&c.diameter>second*.28&&Math.abs(dot(norm(c.axis),axis))>.97);
+  return major/Math.max(second,1)>1.65&&cyl?'AXIAL':'GENERAL';
+}
+function renderGeneralComponentSheet(svg,part,{componentName='Деталь',fileName='',theme='light'}={}){
+  const scale=chooseScale(Math.max(...part.bounds.size)),front=worldView('front'),top=worldView('top'),side=worldView('side'),iso=worldView('iso');
+  svg.setAttribute('viewBox','0 0 1400 990');svg.setAttribute('role','img');svg.setAttribute('aria-label',`Чертёж детали ${componentName}`);
+  let s=`<rect width="1400" height="990" fill="${theme==='dark'?'#e9edf2':'#eef1f4'}"/><rect x="14" y="12" width="1372" height="966" rx="2" fill="#fff"/><rect x="30" y="28" width="1340" height="934" fill="none" stroke="#111" stroke-width="1.15"/>`;
+  const main={x:80,y:80,w:690,h:350},topBox={x:80,y:500,w:690,h:255},sideBox={x:820,y:80,w:300,h:350},isoBox={x:830,y:470,w:360,h:285};
+  const mv=renderMesh(part,front,main,{width:.82}),tv=renderMesh(part,top,topBox,{width:.7}),sv=renderMesh(part,side,sideBox,{width:.82}),iv=renderMesh(part,iso,isoBox,{width:.58});
+  s+=viewLabel('Главный вид',main.x+4,main.y-12)+mv.svg+viewLabel('Вид сверху',topBox.x+4,topBox.y-12)+tv.svg+viewLabel('Вид справа',sideBox.x+4,sideBox.y-12)+sv.svg+viewLabel('Изометрия',isoBox.x+4,isoBox.y-12)+iv.svg;
+  const [sx,sy,sz]=part.bounds.size;
+  s+=dimH(main.x+20,main.x+main.w-20,main.y+main.h+28,main.y+main.h-8,fmt(sx,2));
+  s+=dimV(main.x-16,main.y+18,main.y+main.h-18,main.x+5,fmt(sz,2));
+  s+=dimV(topBox.x-16,topBox.y+16,topBox.y+topBox.h-16,topBox.x+5,fmt(sy,2));
+  const pnotes=patternNotes(part,5),cnotes=precisionNotes(part,4),notes=[...pnotes,...cnotes].slice(0,8);
+  if(notes.length){s+=`<g font-family="Arial" fill="#111"><text x="830" y="790" font-size="10.5" font-weight="700">Проверяемые элементы</text>`;notes.forEach((t,i)=>s+=`<text x="830" y="${810+i*16}" font-size="8.8">${esc(t)}</text>`);s+='</g>'}
+  s+=renderPartStamp(componentName,scale,{x:860,y:845,w:495,h:95});
+  s+=`<text x="95" y="944" font-family="Arial" font-size="7" fill="#555">ROZFOOD ENGINEERING STUDIO · Drawing Intelligence v1.3.1 · GENERAL PART · ${esc(fileName)}</text><text x="1240" y="815" font-family="Arial" font-size="9" text-anchor="end" fill="#111">VERIFIED TESS</text>`;
+  svg.innerHTML=s;
+}
+
 export function renderComponentProductionSheet(svg,rec,{componentId=null,componentName='Деталь',fileName='',theme='light'}={}){
   const faces=(rec?.faces||[]).filter(f=>!componentId||f.componentId===componentId);
   if(!faces.length){svg.setAttribute('viewBox','0 0 1400 990');svg.innerHTML='<rect width="1400" height="990" fill="#fff"/><text x="700" y="490" text-anchor="middle" font-family="Arial" font-size="28">Выберите деталь в 3D или дереве сборки</text>';return}
   const part=subRecord(rec,faces);part.recognition=recognizeTessellationGeometry(part);
+  const profile=partDrawingProfile(part);part.drawingProfile=profile;
+  if(profile==='GENERAL'){renderGeneralComponentSheet(svg,part,{componentName,fileName,theme});return}
   const axis=dominantAxis(part),{u,v}=basis(axis),D=Math.max(...part.bounds.size.filter((_,i)=>Math.abs(axis[i])<.8)),axial=corners(part.bounds).map(p=>dot(p,axis)),L=Math.max(...axial)-Math.min(...axial),scale=chooseScale(Math.max(L,D));
   const side=viewSpec(axis,'side'),end=viewSpec(axis,'end'),iso=viewSpec(axis,'iso');
   svg.setAttribute('viewBox','0 0 1400 990');svg.setAttribute('role','img');svg.setAttribute('aria-label',`Чертёж детали ${componentName}`);
@@ -221,6 +264,6 @@ export function renderComponentProductionSheet(svg,rec,{componentId=null,compone
   const pnotes=patternNotes(part,4);if(pnotes.length)pnotes.forEach((t,i)=>s+=`<text x="${endBox.x+8}" y="${endBox.y+22+i*17}" font-family="Arial" font-size="9.5" fill="#111">${esc(t)}</text>`);else{const holes=groupedHoles(part,axis);holes.forEach((h,i)=>s+=`<text x="${endBox.x+8}" y="${endBox.y+22+i*17}" font-family="Arial" font-size="9.5" fill="#111">${h.count} отв. Ø${fmt(h.d,2)}</text>`)}const cnotes=precisionNotes(part,3);cnotes.forEach((t,i)=>s+=`<text x="${isoBox.x+8}" y="${isoBox.y+22+i*16}" font-family="Arial" font-size="9" fill="#111">${esc(t)}</text>`);
   s+=`<g stroke="#111" fill="#111" font-family="Arial" font-size="10"><line x1="${main.x+14}" y1="${main.y+main.h/2}" x2="${main.x+main.w-14}" y2="${main.y+main.h/2}" stroke-dasharray="12 4 2 4"/><path d="M${main.x+18} ${main.y+main.h/2}l10 -5v10zM${main.x+main.w-18} ${main.y+main.h/2}l-10 -5v10z"/><text x="${main.x+4}" y="${main.y+main.h/2-8}" stroke="none">A</text><text x="${main.x+main.w-6}" y="${main.y+main.h/2-8}" stroke="none">A</text></g>`;
   s+=renderPartStamp(componentName,scale,{x:860,y:845,w:495,h:95});
-  s+=`<text x="95" y="944" font-family="Arial" font-size="7" fill="#555">ROZFOOD ENGINEERING STUDIO · Drawing Editor Core v1.3.0 · ${esc(fileName)}</text><text x="1240" y="815" font-family="Arial" font-size="9" text-anchor="end" fill="#111">VERIFIED TESS</text>`;
+  s+=`<text x="95" y="944" font-family="Arial" font-size="7" fill="#555">ROZFOOD ENGINEERING STUDIO · Drawing Intelligence v1.3.1 · ${esc(fileName)}</text><text x="1240" y="815" font-family="Arial" font-size="9" text-anchor="end" fill="#111">VERIFIED TESS</text>`;
   svg.innerHTML=s;
 }

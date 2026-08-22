@@ -1,6 +1,6 @@
-const CACHE='rozfood-engineering-studio-v1.3.0-drawing-editor-core';
+const CACHE='rozfood-engineering-studio-v1.3.1-drawing-intelligence-fix';
 const ASSETS=[
-  './','./index.html','./styles.css?v=1.3.0','./app.js?v=1.3.0','./import-worker.js',
+  './','./index.html','./styles.css?v=1.3.1','./app.js?v=1.3.1','./import-worker.js',
   './import/sldasm-adapter.js','./core/tess-recognition.js','./core/math3d.js',
   './drawing/drawing-engine.js','./drawing/tess-recognition-drawing.js','./drawing/assembly-production-sheet-v130.js','./drawing/drawing-editor.js',
   './viewer/wireframe-viewer.js','./manifest.webmanifest',

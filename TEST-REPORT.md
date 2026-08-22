@@ -1,4 +1,4 @@
-# Test report · ROZFOOD ENGINEERING STUDIO v0.6.0
+# Test report · ROZFOOD ENGINEERING STUDIO v0.6.1
 
 ## Automated regression
 
@@ -32,4 +32,4 @@
 
 Распознано имя корневого продукта: `Сборка Барабана Глобино`.
 
-Статус: PASS для Import & Visualization Core v0.6.0.
+Статус: PASS для Import & Visualization Core v0.6.1.

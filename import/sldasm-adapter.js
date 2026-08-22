@@ -123,11 +123,13 @@ export function parseSLDASM(input,fileName='assembly.sldasm'){
   const productName=stemName(fileName)||'SolidWorks Assembly';
   const products=[{id:'SW-ROOT',name:productName,type:'assembly'},...components.map(c=>({id:`SW-P-${c.index}`,name:c.name,file:c.file,type:c.type}))];
   const parseMs=(typeof performance!=='undefined'?performance.now():Date.now())-t0;
+  const signatureHex=[...bytes.slice(0,8)].map(b=>b.toString(16).padStart(2,'0')).join(' ');
+  const container=cfb.isCFB?'CFB/OLE':'SolidWorks native binary';
   return {
-    format:'SLDASM',adapter:'sldasm-native-reference-v0.1',geometryAvailable:false,isAssembly:true,
+    format:'SLDASM',adapter:'sldasm-native-reference-v0.2',geometryAvailable:false,isAssembly:true,
     unit:'mm',factor:1,bounds:{min:[0,0,0],max:[0,0,0],size:[0,0,0],center:[0,0,0]},
     counts:emptyCounts(),edges:[],surfaces:[],radii:[],boltPatterns:[],instances:occurrences,occurrences,products,
-    nativeAssembly:{root:productName,file:baseName(fileName),componentCount:components.length,occurrenceCount:occurrences.length,components,container:cfb.isCFB?'CFB/OLE':'unknown',sectorSize:cfb.sectorSize,directoryNames:cfb.directoryNames,scanStrings:strings.length,confidence:components.length?'preliminary':'low',note:'Компоненты и BOM извлечены локальным эвристическим анализом ссылок SLDASM. Геометрия B-Rep закрытого формата SolidWorks не декодируется этим модулем.'},
+    nativeAssembly:{root:productName,file:baseName(fileName),componentCount:components.length,occurrenceCount:occurrences.length,components,container,signatureHex,sectorSize:cfb.sectorSize,directoryNames:cfb.directoryNames,scanStrings:strings.length,confidence:components.length?'preliminary':(cfb.isCFB?'low':'format-recognized'),note:components.length?'Компоненты и BOM извлечены локальным эвристическим анализом ссылок SLDASM.':'SLDASM распознан, но этот контейнер не отдаёт ссылки обычным string-scan. Точная B-Rep геометрия требует отдельного SolidWorks-совместимого декодера.'},
     parseMs
   };
 }

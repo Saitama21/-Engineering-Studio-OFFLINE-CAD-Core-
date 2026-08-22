@@ -1,4 +1,4 @@
-# Import & Visualization Core v0.6.0
+# Import & Visualization Core v0.6.1
 
 ## Поток импорта STEP
 

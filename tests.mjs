@@ -52,4 +52,4 @@ console.log('SLDASM adapter',JSON.stringify({components:sw.nativeAssembly.compon
 const nativeSvg={attrs:{},innerHTML:'',setAttribute(k,v){this.attrs[k]=v}};
 renderNativeAssemblyDrawing(nativeSvg,sw.nativeAssembly,{projectName:'Machine',fileName:'Machine.SLDASM',theme:'light'});
 if(!nativeSvg.innerHTML.includes('SLDASM BOM')||!nativeSvg.innerHTML.includes('v0.6.0'))throw new Error('SLDASM: assembly drawing sheet missing');
-console.log('All v0.6.0 Import & Visualization Core tests passed.');
+console.log('All v0.6.1 SLDASM-only Import Core tests passed.');

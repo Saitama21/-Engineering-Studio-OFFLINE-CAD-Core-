@@ -104,7 +104,7 @@ html[data-theme="dark"] .drawing-workspace{background:linear-gradient(145deg,#10
 
 
 /* v0.5.0 · Drawing Core + assembly detailed */
-.mode-switch button:disabled{opacity:.38;cursor:not-allowed;background:transparent!important;box-shadow:none!important}.assembly-actions{display:flex;justify-content:flex-end;margin-top:12px}.assembly-actions button{border-color:color-mix(in srgb,var(--accent) 35%,var(--line));color:var(--accent);font-weight:700;background:color-mix(in srgb,var(--accent) 7%,var(--panel))}
+.mode-switch button:disabled{opacity:.38;cursor:not-allowed;background:transparent!important;box-shadow:none!important}.assembly-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:12px}.assembly-actions button{border-color:color-mix(in srgb,var(--accent) 35%,var(--line));color:var(--accent);font-weight:700;background:color-mix(in srgb,var(--accent) 7%,var(--panel))}
 @media(max-width:760px){.mode-switch{max-width:100%;scrollbar-width:thin}.mode-switch button[data-drawing-mode="assemblyDetailed"]{padding-inline:9px}.brand div{min-width:0}.brand b{display:block;white-space:normal;line-height:1.08;max-width:190px}.brand span{display:block;white-space:normal;line-height:1.15;max-width:210px}}
 
 /* v0.8.0 · Tessellation Geometry Recognition */

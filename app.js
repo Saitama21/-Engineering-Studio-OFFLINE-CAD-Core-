@@ -1,13 +1,15 @@
 import {WireframeViewer} from './viewer/wireframe-viewer.js';
 import {drawingFromRecognition,renderDrawing,serializeDrawing,renderNativeAssemblyDrawing} from './drawing/drawing-engine.js';
 import {renderTessRecognitionDrawing} from './drawing/tess-recognition-drawing.js';
-import {renderAssemblyProductionSheet} from './drawing/assembly-production-sheet-v090.js';
+import {renderAssemblyProductionSheet,renderComponentProductionSheet} from './drawing/assembly-production-sheet-v100.js';
 
+const APP_VERSION='1.0.0';
+const BUILD_LABEL='PRODUCTION DRAWING CORE';
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const viewer=new WireframeViewer($('#viewerCanvas'));
-viewer.onSelect=(id,instance)=>{const el=$('#selectionInfo');if(el)el.textContent=id?`выбрано: ${instance?.name||'компонент'}`:'клик по детали — выбрать';};
+viewer.onSelect=(id,instance)=>{state.selectedComponentId=id||null;state.selectedComponentName=instance?.name||'';const el=$('#selectionInfo');if(el)el.textContent=id?`выбрано: ${instance?.name||'компонент'}`:'клик по детали — выбрать';updateDrawingModeAvailability();};
 const worker=new Worker('./import-worker.js',{type:'module'});
-let state={fileName:null,fileSize:0,rec:null,dimensions:[],types:[],parseMs:0,drawingMode:'production'};
+let state={fileName:null,fileSize:0,rec:null,dimensions:[],types:[],parseMs:0,drawingMode:'production',selectedComponentId:null,selectedComponentName:''};
 
 const THEME_KEY='engineering-studio-theme';
 function applyTheme(theme,{persist=true}={}){
@@ -35,7 +37,7 @@ async function importFile(file){
   $('#projectName').textContent=fileName.replace(/\.[^.]+$/,'');
   $('#fileMeta').textContent=`${fileName} · ${(fileSize/1024).toFixed(1)} KB · локально`;
   const buffer=await file.arrayBuffer();
-  log(`Импорт ${fileName}: SLDASM Tess Recognition decoder · ${(fileSize/1024).toFixed(1)} KB.`);
+  log(`Импорт ${fileName}: SLDASM Production Drawing decoder · ${(fileSize/1024).toFixed(1)} KB.`);
   worker.postMessage({kind:'sldasm',buffer,fileName},[buffer]);
 }
 
@@ -72,6 +74,10 @@ function renderCurrentDrawing(){
     else renderNativeAssemblyDrawing($('#drawingSvg'),n,{projectName,fileName:state.fileName,theme:document.documentElement.dataset.theme});
     return;
   }
+  if(state.drawingMode==='partDetail'){
+    renderComponentProductionSheet($('#drawingSvg'),r,{componentId:state.selectedComponentId,componentName:state.selectedComponentName||'Выбранная деталь',fileName:state.fileName,theme:document.documentElement.dataset.theme});
+    return;
+  }
   if(r.tessellation?.mode==='triangle-strips'&&r.recognition){
     const projectName=$('#projectName')?.textContent||state.fileName?.replace(/\.[^.]+$/,'')||n?.root||'SLDASM';
     renderTessRecognitionDrawing($('#drawingSvg'),r,{projectName,fileName:state.fileName,theme:document.documentElement.dataset.theme,mode:state.drawingMode});
@@ -81,16 +87,17 @@ function renderCurrentDrawing(){
 }
 
 function updateDrawingModeAvailability(){
-  const btn=document.querySelector('[data-drawing-mode="assemblyDetailed"]');if(!btn||!state.rec)return;
-  const available=!!state.rec.isAssembly;btn.disabled=!available;btn.title=available?'Детализированный сборочный чертёж + BOM':'Доступно после загрузки SLDASM сборки';
-  if(!available&&state.drawingMode==='assemblyDetailed'){
-    state.drawingMode='production';$$('[data-drawing-mode]').forEach(x=>x.classList.toggle('active',x.dataset.drawingMode==='production'));
-  }
+  if(!state.rec)return;
+  const assemblyBtn=document.querySelector('[data-drawing-mode="assemblyDetailed"]');
+  if(assemblyBtn){const available=!!state.rec.isAssembly;assemblyBtn.disabled=!available;assemblyBtn.title=available?'Сборочный производственный лист: виды, A–A/B–B, C/D, позиции, BOM и штамп':'Доступно после загрузки SLDASM сборки';if(!available&&state.drawingMode==='assemblyDetailed'){state.drawingMode='production';}}
+  const partBtn=document.querySelector('[data-drawing-mode="partDetail"]');
+  if(partBtn){const available=!!state.selectedComponentId;partBtn.disabled=!available;partBtn.title=available?`Чертёж выбранной детали: ${state.selectedComponentName||state.selectedComponentId}`:'Сначала выберите деталь в 3D или дереве сборки';if(!available&&state.drawingMode==='partDetail'){state.drawingMode='production';}}
+  $$('[data-drawing-mode]').forEach(x=>x.classList.toggle('active',x.dataset.drawingMode===state.drawingMode));
 }
 
 function renderTree(){
   const r=state.rec,n=r.nativeAssembly;
-  const rows=[['Файл',state.fileName],['Формат','SLDASM'],['Адаптер','Analog Drawing v0.9.0'],['Контейнер',n.container],['Streams',n.streamCount||0],['Позиций',n.componentCount],['Вхождений',n.occurrenceCount],['Tess-блоков',n.faceBlocks||0],['Исходных треуг.',n.sourceTriangles||0],['Сценовых треуг.',n.triangles||0],['Размещено',n.mappedOccurrences||0]];
+  const rows=[['Файл',state.fileName],['Формат','SLDASM'],['Адаптер','Production Drawing v1.0.0'],['Контейнер',n.container],['Streams',n.streamCount||0],['Позиций',n.componentCount],['Вхождений',n.occurrenceCount],['Tess-блоков',n.faceBlocks||0],['Исходных треуг.',n.sourceTriangles||0],['Сценовых треуг.',n.triangles||0],['Размещено',n.mappedOccurrences||0]];
   $('#treeBody').classList.remove('empty');
   $('#treeBody').innerHTML=rows.map(([a,b])=>`<div class="tree-row"><b>${esc(a)}</b><span>${esc(b)}</span></div>`).join('');
 }
@@ -100,31 +107,38 @@ function renderFeatures(){
   const r=state.rec,n=r.nativeAssembly,geo=r.geometryAvailable!==false;
   $('#featureList').classList.remove('empty');
   const G=r.recognition;
-  $('#featureList').innerHTML=`<div class="feature"><i>☷</i><div>SLDASM component tree<small>${esc(n?.componentCount||0)} позиций · ${esc(n?.occurrenceCount||0)} вхождений</small></div><strong>OK</strong></div><div class="feature"><i>△</i><div>3D FaceTessellations + transforms<small>${geo?`${esc(n?.mappedOccurrences||0)} вхождений · ${esc(n?.triangles||0)} треугольников`:'встроенная тесселяция не найдена'}</small></div><strong>${geo?'OK':'—'}</strong></div><div class="feature"><i>◉</i><div>Tess Geometry Recognition<small>${G?`${esc(G.counts.planes)} плоск. · ${esc(G.counts.cylinders)} цилиндр. · ${esc(G.counts.holes)} отверст.`:'ожидает 3D mesh'}</small></div><strong>${G?'OK':'—'}</strong></div><div class="feature"><i>▱</i><div>Analog Drawing Recognition<small>${G?'главный вид · торец · A–A · B–B · C/D · BOM':'ожидает распознавание геометрии'}</small></div><strong>${G?'OK':'—'}</strong></div><div class="feature"><i>◎</i><div>Точный B-Rep<small>Parasolid topology ещё не декодируется; TESS-размеры требуют VERIFY</small></div><strong>—</strong></div>`;
+  $('#featureList').innerHTML=`<div class="feature"><i>☷</i><div>SLDASM component tree<small>${esc(n?.componentCount||0)} позиций · ${esc(n?.occurrenceCount||0)} вхождений</small></div><strong>OK</strong></div><div class="feature"><i>△</i><div>3D FaceTessellations + transforms<small>${geo?`${esc(n?.mappedOccurrences||0)} вхождений · ${esc(n?.triangles||0)} треугольников`:'встроенная тесселяция не найдена'}</small></div><strong>${geo?'OK':'—'}</strong></div><div class="feature"><i>◉</i><div>Tess Geometry Recognition<small>${G?`${esc(G.counts.planes)} плоск. · ${esc(G.counts.cylinders)} цилиндр. · ${esc(G.counts.holes)} отверст.`:'ожидает 3D mesh'}</small></div><strong>${G?'OK':'—'}</strong></div><div class="feature"><i>▱</i><div>Production Drawing Layout<small>${G?'эталонная компоновка · A–A/B–B · C/D · позиции · BOM':'ожидает распознавание геометрии'}</small></div><strong>${G?'OK':'—'}</strong></div><div class="feature"><i>◎</i><div>Точный B-Rep<small>Parasolid topology ещё не декодируется; TESS-размеры требуют VERIFY</small></div><strong>—</strong></div>`;
 }
 
 
+function dimensionSymbol(x){
+  const label=String(x?.label||'');
+  if(label.startsWith('Ø')||x?.source==='TESS_CYLINDER')return 'Ø';
+  if(label.startsWith('L')||x?.source==='TESS_CYLINDER_LENGTH')return 'L';
+  return ['X','Y','Z'].includes(label)?label:'';
+}
+function dimensionSourceLabel(x){return x.source==='TESS_CYLINDER'?'распознано: цилиндр':x.source==='TESS_CYLINDER_LENGTH'?'распознано: длина':'габарит TESS'}
 function renderDimensions(){
   const r=state.rec,d=state.dimensions||[];
   if(r.geometryAvailable!==false&&d.length){
     $('#dimensionCards').classList.remove('empty');
-    $('#dimensionCards').innerHTML=d.map(x=>`<div class="dim-card"><span>${esc(x.label)}</span><b>${fmt(x.value)} ${esc(x.unit||'mm')}</b><small>${esc(x.source==='TESS_CYLINDER'?'распознано: цилиндр':x.source==='TESS_CYLINDER_LENGTH'?'распознано: длина':'габарит TESS')}</small></div>`).join('');
-    $('#dimensionsTable').innerHTML=d.map(x=>`<tr><td>${esc(x.type)}</td><td>${esc(x.label)}</td><td>${fmt(x.value)} ${esc(x.unit||'mm')}</td><td>${Math.round((x.confidence||0)*100)}% · ${esc(x.source||'TESS')}</td></tr>`).join('');
+    $('#dimensionCards').innerHTML=d.map(x=>{const sym=dimensionSymbol(x),value=`${sym?`${sym} `:''}${fmt(x.value)} ${esc(x.unit||'mm')}`;return `<div class="dim-card"><span>${esc(x.type||x.label)}</span><b>${value}</b><small>${esc(dimensionSourceLabel(x))}</small></div>`}).join('');
+    $('#dimensionsTable').innerHTML=d.map(x=>{const sym=dimensionSymbol(x);return `<tr><td>${esc(x.type)}</td><td>${esc(sym||x.label)}</td><td>${fmt(x.value)} ${esc(x.unit||'mm')}</td><td>${Math.round((x.confidence||0)*100)}% · ${esc(x.source||'TESS')}</td></tr>`}).join('');
   }else{
     $('#dimensionCards').classList.add('empty');$('#dimensionCards').textContent='Встроенная геометрия не найдена — габариты недоступны.';
-    $('#dimensionsTable').innerHTML='<tr><td colspan="4">v0.9.0 распознаёт геометрию и строит эталонно-подобный сборочный лист из FaceTessellations. Все TESS-размеры требуют VERIFY.</td></tr>';
+    $('#dimensionsTable').innerHTML='<tr><td colspan="4">v1.0.0 строит производственный сборочный лист и чертёж выбранной детали из FaceTessellations. TESS-размеры требуют VERIFY.</td></tr>';
   }
 }
 
 
 function renderAssembly(){
   const r=state.rec,root=$('#assemblyBody'),n=r.nativeAssembly,components=n.components||[],geo=r.geometryAvailable!==false;
-  root.innerHTML=`<div class="assembly-head"><div><h3>${esc(n.root)} · SLDASM</h3><p class="hint">Analog Drawing Core v0.9.0 · ${esc(n.container)} · полностью локально</p></div><span class="adapter-badge">SLDASM</span></div><div class="assembly-grid"><section><h4>Дерево компонентов</h4><ul class="component-tree"><li><b>▾ ${esc(n.root)}</b><ul>${components.map(c=>`<li ${c.instances?.[0]?`data-component-id="${esc(c.instances[0])}" class="selectable-component"`:''}><span>${c.type==='assembly'?'▣':'◫'} ${esc(c.name)}</span><em>×${c.count}</em><small>${esc(c.file)}</small></li>`).join('')||'<li class="muted">Компоненты не извлечены из этого контейнера</li>'}</ul></li></ul></section><section><h4>BOM · ${components.length} позиций</h4><div class="bom bom-wide"><div class="head">№</div><div class="head">Компонент</div><div class="head">Кол-во</div>${components.map((c,i)=>`<div>${i+1}</div><div><b>${esc(c.name)}</b><small>${esc(c.file)} · ${c.type==='assembly'?'подсборка':'деталь'}</small></div><div>${c.count}</div>`).join('')}</div></section></div><div class="assembly-actions"><button data-open-assembly-drawing>Открыть сборочный чертёж</button></div><div class="native-note"><b>v0.9.0:</b> структура/BOM читаются из нативных потоков SLDASM. <b>3D:</b> ${geo?`собрано из FaceTessellations с матрицами вхождений (${esc(n.mappedOccurrences||0)} размещено / ${esc(n.triangles||0)} треугольников сцены).`:'встроенная тесселяция в файле не найдена.'} Поверх mesh работает локальное распознавание плоскостей/цилиндров/отверстий; точный Parasolid B-Rep остаётся отдельным следующим слоем.</div>`;
+  root.innerHTML=`<div class="assembly-head"><div><h3>${esc(n.root)} · SLDASM</h3><p class="hint">Production Drawing Core v1.0.0 · ${esc(n.container)} · полностью локально</p></div><span class="adapter-badge">SLDASM</span></div><div class="assembly-grid"><section><h4>Дерево компонентов</h4><ul class="component-tree"><li><b>▾ ${esc(n.root)}</b><ul>${components.map(c=>`<li ${c.instances?.[0]?`data-component-id="${esc(c.instances[0])}" data-component-name="${esc(c.name)}" class="selectable-component"`:''}><span>${c.type==='assembly'?'▣':'◫'} ${esc(c.name)}</span><em>×${c.count}</em><small>${esc(c.file)}</small></li>`).join('')||'<li class="muted">Компоненты не извлечены из этого контейнера</li>'}</ul></li></ul></section><section><h4>BOM · ${components.length} позиций</h4><div class="bom bom-wide"><div class="head">№</div><div class="head">Компонент</div><div class="head">Кол-во</div>${components.map((c,i)=>`<div>${i+1}</div><div><b>${esc(c.name)}</b><small>${esc(c.file)} · ${c.type==='assembly'?'подсборка':'деталь'}</small></div><div>${c.count}</div>`).join('')}</div></section></div><div class="assembly-actions"><button data-open-assembly-drawing>Открыть производственный сборочный чертёж</button><button data-open-part-drawing ${state.selectedComponentId?'':'disabled'}>Чертёж выбранной детали</button></div><div class="native-note"><b>v1.0.0:</b> структура/BOM читаются из нативных потоков SLDASM. <b>3D:</b> ${geo?`собрано из FaceTessellations с матрицами вхождений (${esc(n.mappedOccurrences||0)} размещено / ${esc(n.triangles||0)} треугольников сцены).`:'встроенная тесселяция в файле не найдена.'} Производственный Drawing Core строит чистые проекции, секущие виды, позиции и спецификацию. Точный Parasolid B-Rep пока не декодируется.</div>`;
 }
 
 
 
-$('#assemblyBody').addEventListener('click',e=>{const comp=e.target.closest('[data-component-id]');if(comp){viewer.setSelectedComponent(comp.dataset.componentId);switchTab('model');$('#selectionInfo').textContent=`выбрано: ${comp.querySelector('span')?.textContent?.replace(/^◫\s*/,'')||'компонент'}`;log('Выбран компонент 3D: '+($('#selectionInfo').textContent.replace('выбрано: ',''))+'.');return;}const btn=e.target.closest('[data-open-assembly-drawing]');if(!btn)return;state.drawingMode='assemblyDetailed';$$('[data-drawing-mode]').forEach(x=>x.classList.toggle('active',x.dataset.drawingMode==='assemblyDetailed'));switchTab('drawing');renderCurrentDrawing();log('Открыт режим: Сборочный детализированный.');});
+$('#assemblyBody').addEventListener('click',e=>{const comp=e.target.closest('[data-component-id]');if(comp){viewer.setSelectedComponent(comp.dataset.componentId);state.selectedComponentId=comp.dataset.componentId;state.selectedComponentName=comp.dataset.componentName||comp.querySelector('span')?.textContent?.replace(/^[◫▣]\s*/,'')||'компонент';updateDrawingModeAvailability();switchTab('model');$('#selectionInfo').textContent=`выбрано: ${state.selectedComponentName}`;log('Выбран компонент 3D: '+state.selectedComponentName+'.');return;}const part=e.target.closest('[data-open-part-drawing]');if(part){if(!state.selectedComponentId)return;state.drawingMode='partDetail';updateDrawingModeAvailability();switchTab('drawing');renderCurrentDrawing();log('Открыт чертёж выбранной детали.');return;}const btn=e.target.closest('[data-open-assembly-drawing]');if(!btn)return;state.drawingMode='assemblyDetailed';updateDrawingModeAvailability();switchTab('drawing');renderCurrentDrawing();log('Открыт производственный сборочный чертёж.');});
 
 function switchTab(name){$$('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));$$('.view').forEach(v=>v.classList.remove('active-view'));$(`#${name}View`).classList.add('active-view');$('#viewTitle').textContent={model:'3D модель',drawing:'Инженерный авточертёж',dimensions:'Распознанные размеры',assembly:'Состав сборки'}[name];$('#modelActions').classList.toggle('hidden',name!=='model');$('#drawingActions').classList.toggle('hidden',name!=='drawing');if(name==='model')viewer.draw();if(name==='drawing'&&state.rec)renderCurrentDrawing()}
 $$('.tab').forEach(b=>b.addEventListener('click',()=>switchTab(b.dataset.tab)));
@@ -133,9 +147,10 @@ $('#themeToggle').addEventListener('click',()=>applyTheme(document.documentEleme
 $('#fitBtn').addEventListener('click',()=>viewer.fit());$('#solidBtn').addEventListener('click',()=>{viewer.setMode('solid');$('#solidBtn').classList.add('active');$('#wireBtn').classList.remove('active');});$('#wireBtn').addEventListener('click',()=>{viewer.setMode('wire');$('#wireBtn').classList.add('active');$('#solidBtn').classList.remove('active');});$('#clearLog').addEventListener('click',()=>$('#logBody').innerHTML='');
 $('#fileInput').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;await importFile(f);e.target.value=''})
 const drop=$('#dropZone');['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('drag')}));['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('drag')}));drop.addEventListener('drop',async e=>{const f=e.dataTransfer.files[0];if(f)await importFile(f)});
-$('#exportBtn').addEventListener('click',()=>{if(!state.rec)return;const report={version:'0.9.0',generated:new Date().toISOString(),file:state.fileName,drawingMode:state.drawingMode,counts:state.rec.counts,bounds:state.rec.bounds,dimensions:state.dimensions,boltPatterns:state.rec.boltPatterns,products:state.rec.products,occurrences:state.rec.occurrences,nativeAssembly:state.rec.nativeAssembly||null,recognition:state.rec.recognition||null};const blob=new Blob([JSON.stringify(report,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(state.fileName||'model').replace(/\.[^.]+$/,'')+'-engineering-report.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)});
+$('#exportBtn').addEventListener('click',()=>{if(!state.rec)return;const report={version:APP_VERSION,generated:new Date().toISOString(),file:state.fileName,drawingMode:state.drawingMode,counts:state.rec.counts,bounds:state.rec.bounds,dimensions:state.dimensions,boltPatterns:state.rec.boltPatterns,products:state.rec.products,occurrences:state.rec.occurrences,nativeAssembly:state.rec.nativeAssembly||null,recognition:state.rec.recognition||null};const blob=new Blob([JSON.stringify(report,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(state.fileName||'model').replace(/\.[^.]+$/,'')+'-engineering-report.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)});
 $('#exportDrawingBtn').addEventListener('click',()=>{if(!state.rec)return;renderCurrentDrawing();const svg=serializeDrawing($('#drawingSvg'));const blob=new Blob([svg],{type:'image/svg+xml;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(state.fileName||'model').replace(/\.[^.]+$/,'')+'-drawing-'+state.drawingMode+'.svg';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);log('Чертёж экспортирован в SVG локально.');});
 function esc(x){return String(x??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 initTheme();
-if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').then(()=>log('Service Worker активен: приложение готово к офлайн-кэшу.')).catch(e=>log('Service Worker: '+e.message));
+if('serviceWorker'in navigator)navigator.serviceWorker.register(`./sw.js?v=${APP_VERSION}`,{updateViaCache:'none'}).then(reg=>{reg.update().catch(()=>{});log(`Service Worker v${APP_VERSION} активен: приложение готово к офлайн-кэшу.`)}).catch(e=>log('Service Worker: '+e.message));
+log(`Build ${APP_VERSION} · ${BUILD_LABEL} готов.`);
 window.addEventListener('online',()=>$('#offlineStatus').textContent='Онлайн (ядро всё равно локальное)');window.addEventListener('offline',()=>$('#offlineStatus').textContent='Оффлайн ядро');

@@ -1,4 +1,4 @@
-// ROZFOOD Engineering Studio v2.3.0 — Drawing Reconstruction Core
+// ROZFOOD Engineering Studio v2.4.0 — CAD Edge Graph / Drawing Reconstruction Core
 // Faceted source in, engineering linework out. No AI / no server dependency.
 
 const dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
@@ -11,6 +11,7 @@ const norm=a=>{const l=len(a)||1;return[a[0]/l,a[1]/l,a[2]/l]};
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 
 const topologyCache=new WeakMap();
+const cadEdgeCache=new WeakMap();
 
 function faceNormal(face){
   const ns=face?.normals||[];
@@ -58,6 +59,36 @@ export function buildDrawingTopology(rec){
   const out={edges,quantization:q};topologyCache.set(rec,out);return out;
 }
 
+
+/**
+ * Reconstructs the drawing edge graph at SolidWorks FaceTessellations face boundaries.
+ * Triangulation edges inside one original tessellated face are never drawing edges.
+ * This is the critical distinction between a CAD drawing and a mesh wireframe.
+ */
+export function buildCadEdgeGraph(rec){
+  if(cadEdgeCache.has(rec))return cadEdgeCache.get(rec);
+  const q=quantStep(rec),groups=new Map();
+  for(const face of rec?.faces||[]){
+    const loop=face?.loops?.[0]||[];if(loop.length<3)continue;
+    const fk=[face.componentId||'RAW',face.modelId||'',face.sourceStream||'',face.tessFaceId??''].join('|');
+    let g=groups.get(fk);if(!g){g={faceKey:fk,componentId:face.componentId||'RAW',edges:new Map()};groups.set(fk,g)}
+    const n=faceNormal(face);
+    for(let i=0;i<loop.length;i++){
+      const a=loop[i],b=loop[(i+1)%loop.length];if(!a||!b||len(sub(a,b))<q*.1)continue;
+      const k=edgeKey(a,b,g.componentId,q);let e=g.edges.get(k);if(!e){e={a,b,count:0,normals:[]};g.edges.set(k,e)}e.count++;e.normals.push(n)
+    }
+  }
+  const global=new Map();
+  for(const g of groups.values())for(const e of g.edges.values()){
+    if(e.count!==1)continue; // interior tessellation chord inside one original CAD face
+    const k=edgeKey(e.a,e.b,g.componentId,q);let x=global.get(k);
+    if(!x){x={a:e.a,b:e.b,componentId:g.componentId,normals:[],faces:0,faceKeys:[]};global.set(k,x)}
+    let n=[0,0,0];for(const z of e.normals)n=add(n,z);n=norm(n);x.normals.push(n);x.faces++;x.faceKeys.push(g.faceKey);
+  }
+  const edges=[...global.values()];
+  const out={edges,quantization:q,sourceFaceGroups:groups.size};cadEdgeCache.set(rec,out);return out;
+}
+
 function classifyEdge(edge,viewDir,{featureCos=.985,tangentCos=.9996}={}){
   const ns=edge.normals||[],d=norm(viewDir);
   if(ns.length<=1)return{kind:'BOUNDARY',draw:true};
@@ -81,7 +112,7 @@ function classifyEdge(edge,viewDir,{featureCos=.985,tangentCos=.9996}={}){
 }
 
 export function engineeringLinework(rec,viewDir,options={}){
-  const {edges}=buildDrawingTopology(rec),out=[];
+  const {edges}=buildCadEdgeGraph(rec),out=[];
   for(const edge of edges){
     const c=classifyEdge(edge,viewDir,options);
     if(c.draw)out.push({...edge,kind:c.kind});
@@ -148,6 +179,6 @@ export function visibleEdgeSegments(edge,s,field,{samples=33,refine=5}={}){
   return intervals.filter(([a,b])=>b-a>1e-5).map(([a,b])=>[at(a),at(b)]);
 }
 export function reconstructionStats(rec,viewDir){
-  const topology=buildDrawingTopology(rec),line=engineeringLinework(rec,viewDir);
-  return{rawEdges:topology.edges.length,engineeringEdges:line.length,suppressed:Math.max(0,topology.edges.length-line.length),quantization:topology.quantization};
+  const triangleTopology=buildDrawingTopology(rec),cad=buildCadEdgeGraph(rec),line=engineeringLinework(rec,viewDir);
+  return{rawTriangleEdges:triangleTopology.edges.length,cadEdges:cad.edges.length,engineeringEdges:line.length,suppressedTriangulation:Math.max(0,triangleTopology.edges.length-cad.edges.length),suppressedByView:Math.max(0,cad.edges.length-line.length),quantization:cad.quantization,sourceFaceGroups:cad.sourceFaceGroups};
 }

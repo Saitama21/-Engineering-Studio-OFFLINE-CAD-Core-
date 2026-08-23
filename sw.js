@@ -1,6 +1,6 @@
-const CACHE='rozfood-engineering-studio-v2.3.0-analytic-geometry';
+const CACHE='rozfood-engineering-studio-v2.4.0-analytic-geometry';
 const ASSETS=[
-  './','./index.html','./styles.css?v=2.3.0','./app.js?v=2.3.0','./import-worker.js',
+  './','./index.html','./styles.css?v=2.4.0','./app.js?v=2.4.0','./import-worker.js',
   './import/sldasm-adapter.js','./import/slddrw-adapter.js','./core/tess-recognition.js','./core/manufacturing-recognition.js','./core/component-local.js','./core/feature-graph.js','./core/brep-core.js','./core/math3d.js','./core/analytic-geometry.js',
   './drawing/drawing-engine.js','./drawing/drawing-reconstruction-core.js','./drawing/flat-pattern.js','./drawing/tess-recognition-drawing.js','./drawing/assembly-production-sheet-v130.js','./drawing/drawing-editor.js','./drawing/drawing-navigator.js',
   './viewer/wireframe-viewer.js','./manifest.webmanifest',

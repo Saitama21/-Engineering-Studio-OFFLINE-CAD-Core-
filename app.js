@@ -5,17 +5,18 @@ import {renderAssemblyProductionSheet,renderComponentProductionSheet,assemblyDra
 import {DrawingEditor} from './drawing/drawing-editor.js';
 import {DrawingNavigator} from './drawing/drawing-navigator.js';
 import {recognizeTessellationGeometry} from './core/tess-recognition.js';
-import {componentLocalRecord} from './core/component-local.js';
+import {componentLocalRecord,componentDrawableIds} from './core/component-local.js';
+import {buildFeatureGraph} from './core/feature-graph.js';
 
-const APP_VERSION='1.5.1';
-const BUILD_LABEL='B-REP CORE ALPHA · LOCAL PART FRAME';
+const APP_VERSION='1.6.0';
+const BUILD_LABEL='SUBASSEMBLY + PRODUCTION DRAWING CORE';
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const viewer=new WireframeViewer($('#viewerCanvas'));
 viewer.onSelect=(id,instance)=>{
   state.selectedComponentId=id||null;
   state.selectedComponentName=instance?.name||'';
   const el=$('#selectionInfo');
-  if(el){const bt=id?state.rec?.brep?.components?.find(c=>c.componentId===id):null;el.textContent=id?`${instance?.name||'компонент'}${bt?` · ${bt.faces}F · ${bt.shells} shell`:''}`:'клик по детали — выбрать';}
+  if(el){const stats=id?selectionTopology(id):null;el.textContent=id?`${instance?.name||'компонент'}${stats?` · ${stats.faces}F · ${stats.shells} shell · ${stats.parts} дет.`:''}`:'клик по детали — выбрать';}
   updateDrawingModeAvailability();
   if(state.rec){
     renderDimensions();
@@ -46,6 +47,8 @@ function initTheme(){let saved='light';try{saved=localStorage.getItem(THEME_KEY)
 
 function log(msg){const p=document.createElement('p');const t=document.createElement('time');t.textContent=new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit',second:'2-digit'});p.append(t,' '+msg);$('#logBody').prepend(p)}
 function fmt(n,d=3){return Number.isFinite(n)?n.toFixed(d):'—'}
+function selectedSourceFile(componentId=state.selectedComponentId){const occurrence=(state.rec?.occurrences||[]).find(item=>item.id===componentId);return occurrence?.fileName||occurrence?.file||state.fileName}
+function selectionTopology(componentId){if(!state.rec||!componentId)return null;const ids=new Set(componentDrawableIds(state.rec,componentId)),items=(state.rec.brep?.components||[]).filter(item=>ids.has(item.componentId));return{parts:ids.size,faces:items.reduce((sum,item)=>sum+(item.faces||0),0),shells:items.reduce((sum,item)=>sum+(item.shells||0),0)}}
 function setBusy(on){$('#fileInput').disabled=on;$('#offlineStatus').textContent=on?'Разбираю файл…':'Оффлайн ядро';document.body.classList.toggle('busy',on)}
 
 async function importFile(file){
@@ -105,7 +108,7 @@ function renderCurrentDrawing(){
     finalizeCachedDrawing(cacheKey);return;
   }
   if(state.drawingMode==='partDetail'){
-    renderComponentProductionSheet(svg,r,{componentId:state.selectedComponentId,componentName:state.selectedComponentName||'Выбранная деталь',fileName:state.fileName,theme:document.documentElement.dataset.theme});
+    renderComponentProductionSheet(svg,r,{componentId:state.selectedComponentId,componentName:state.selectedComponentName||'Выбранная деталь',fileName:selectedSourceFile(),theme:document.documentElement.dataset.theme});
     finalizeCachedDrawing(cacheKey);return;
   }
   if(r.tessellation?.mode==='triangle-strips'&&r.recognition){
@@ -171,13 +174,13 @@ function updateDrawingModeAvailability(){
   const assemblyBtn=document.querySelector('[data-drawing-mode="assemblyDetailed"]');
   if(assemblyBtn){const available=!!state.rec.isAssembly;assemblyBtn.disabled=!available;assemblyBtn.title=available?'Сборочный производственный лист: виды, A–A/B–B, C/D, позиции, BOM и штамп':'Доступно после загрузки SLDASM сборки';if(!available&&state.drawingMode==='assemblyDetailed'){state.drawingMode='production';}}
   const partBtn=document.querySelector('[data-drawing-mode="partDetail"]');
-  if(partBtn){const available=!!state.selectedComponentId;partBtn.disabled=!available;partBtn.title=available?`Чертёж выбранной детали: ${state.selectedComponentName||state.selectedComponentId}`:'Сначала выберите деталь в 3D или дереве сборки';if(!available&&state.drawingMode==='partDetail'){state.drawingMode='production';}}
+  if(partBtn){const available=!!state.selectedComponentId;partBtn.disabled=!available;partBtn.title=available?`Чертёж выбранного компонента: ${state.selectedComponentName||state.selectedComponentId}`:'Сначала выберите деталь или подсборку в 3D/BOM';if(!available&&state.drawingMode==='partDetail'){state.drawingMode='production';}}
   $$('[data-drawing-mode]').forEach(x=>x.classList.toggle('active',x.dataset.drawingMode===state.drawingMode));
 }
 
 function renderTree(){
   const r=state.rec,n=r.nativeAssembly;
-  const rows=[['Файл',state.fileName],['Формат','SLDASM'],['Адаптер','B-Rep Core v1.5.1'],['Контейнер',n.container],['Streams',n.streamCount||0],['Позиций',n.componentCount],['Вхождений',n.occurrenceCount],['Tess-блоков',n.faceBlocks||0],['Исходных треуг.',n.sourceTriangles||0],['Сценовых треуг.',n.triangles||0],...(r.counts.displayTriangles&&r.counts.displayTriangles!==r.counts.triangles?[['3D LOD',r.counts.displayTriangles],['Передача','Stack-safe']]:[]),...(r.brep?[['B-Rep V',r.brep.counts?.vertices||0],['B-Rep E',r.brep.counts?.edges||0],['B-Rep F',r.brep.counts?.faces||0],['B-Rep Shell',r.brep.counts?.shells||0],['Topology',`${Math.round((r.brep.coverage||0)*100)}% ${r.brep.topologyComplete?'FULL':'LOD'}`]]:[]),['Размещено',n.mappedOccurrences||0]];
+  const rows=[['Файл',state.fileName],['Формат','SLDASM'],['Адаптер','B-Rep Core v1.6.0'],['Контейнер',n.container],['Streams',n.streamCount||0],['Позиций',n.componentCount],['Вхождений',n.occurrenceCount],['Tess-блоков',n.faceBlocks||0],['Исходных треуг.',n.sourceTriangles||0],['Сценовых треуг.',n.triangles||0],...(r.counts.displayTriangles&&r.counts.displayTriangles!==r.counts.triangles?[['3D LOD',r.counts.displayTriangles],['Передача','Stack-safe']]:[]),...(r.brep?[['B-Rep V',r.brep.counts?.vertices||0],['B-Rep E',r.brep.counts?.edges||0],['B-Rep F',r.brep.counts?.faces||0],['B-Rep Shell',r.brep.counts?.shells||0],['Topology',`${Math.round((r.brep.coverage||0)*100)}% ${r.brep.topologyComplete?'FULL':'LOD'}`]]:[]),['Размещено',n.mappedOccurrences||0]];
   $('#treeBody').classList.remove('empty');
   $('#treeBody').innerHTML=rows.map(([a,b])=>`<div class="tree-row"><b>${esc(a)}</b><span>${esc(b)}</span></div>`).join('');
 }
@@ -188,7 +191,7 @@ function renderFeatures(){
   $('#featureList').classList.remove('empty');
   const G=r.recognition;
   const V=G?.verification;
-  $('#featureList').innerHTML=`<div class="feature"><i>☷</i><div>SLDASM component tree<small>${esc(n?.componentCount||0)} позиций · ${esc(n?.occurrenceCount||0)} вхождений</small></div><strong>OK</strong></div><div class="feature"><i>△</i><div>3D FaceTessellations + transforms<small>${geo?`${esc(n?.mappedOccurrences||0)} вхождений · ${esc(n?.triangles||0)} треугольников`:'встроенная тесселяция не найдена'}</small></div><strong>${geo?'OK':'—'}</strong></div><div class="feature"><i>◉</i><div>Precision TESS Recognition<small>${G?`${esc(G.counts.planes)} плоск. · ${esc(G.counts.cylinders)} цилиндр. · ${esc(G.counts.holes)} отверст.`:'ожидает 3D mesh'}</small></div><strong>${G?'OK':'—'}</strong></div><div class="feature verified-feature"><i>✓</i><div>Verified analytical geometry<small>${V?`${esc(V.counts.planes)} плоск. · ${esc(V.counts.cylinders)} цилиндр. · ${esc(V.counts.holes)} отверст. подтверждены fit-критериями`:'ожидает распознавание'}</small></div><strong>${V?'OK':'—'}</strong></div><div class="feature"><i>⌾</i><div>Patterns / PCD / coaxial<small>${G?`${esc(G.counts.holePatterns||0)} групп отверстий · ${esc(G.counts.coaxialGroups||0)} соосных ступеней`:'ожидает распознавание'}</small></div><strong>${G?'OK':'—'}</strong></div><div class="feature"><i>▱</i><div>Drawing Intelligence<small>${G?`${assemblyDrawingProfile(r).profile} · безопасный выбор главного вида · контекст детали/сборки`:'ожидает распознавание геометрии'}</small></div><strong>${G?'OK':'—'}</strong></div><div class="feature editor-feature"><i>✎</i><div>Drawing Editor<small>${G?'перемещение · скрытие · текст · допуски · Ra · сварные обозначения · undo/redo':'ожидает чертёж'}</small></div><strong>${G?'OK':'—'}</strong></div><div class="feature brep-feature"><i>⬡</i><div>ROZFOOD B-Rep Core<small>${r.brep?`${esc(r.brep.counts?.vertices||0)} V · ${esc(r.brep.counts?.edges||0)} E · ${esc(r.brep.counts?.faces||0)} F · ${esc(r.brep.counts?.shells||0)} shell · ${r.brep.faceIdentity==='source-face-blocks'?'FACE-BLOCK':'INFERRED'} · ${r.brep.topologyComplete?'FULL':'LOD'}`:'ожидает 3D mesh'}</small></div><strong>${r.brep?'OK':'—'}</strong></div><div class="feature"><i>◎</i><div>Exact Parasolid B-Rep<small>Следующий уровень ядра: исходные аналитические NURBS/Surface/Curve из Parasolid. v1.5.1 уже строит собственную V/E/F/Shell-топологию по FaceTessellations, но не выдаёт её за точный Parasolid.</small></div><strong>α</strong></div>`;}
+  $('#featureList').innerHTML=`<div class="feature"><i>☷</i><div>SLDASM component tree<small>${esc(n?.componentCount||0)} позиций · ${esc(n?.occurrenceCount||0)} вхождений</small></div><strong>OK</strong></div><div class="feature"><i>△</i><div>3D FaceTessellations + transforms<small>${geo?`${esc(n?.mappedOccurrences||0)} вхождений · ${esc(n?.triangles||0)} треугольников`:'встроенная тесселяция не найдена'}</small></div><strong>${geo?'OK':'—'}</strong></div><div class="feature"><i>◉</i><div>Precision TESS Recognition<small>${G?`${esc(G.counts.planes)} плоск. · ${esc(G.counts.cylinders)} цилиндр. · ${esc(G.counts.holes)} отверст.`:'ожидает 3D mesh'}</small></div><strong>${G?'OK':'—'}</strong></div><div class="feature verified-feature"><i>✓</i><div>Verified analytical geometry<small>${V?`${esc(V.counts.planes)} плоск. · ${esc(V.counts.cylinders)} цилиндр. · ${esc(V.counts.holes)} отверст. подтверждены fit-критериями`:'ожидает распознавание'}</small></div><strong>${V?'OK':'—'}</strong></div><div class="feature"><i>⌾</i><div>Patterns / PCD / coaxial<small>${G?`${esc(G.counts.holePatterns||0)} групп отверстий · ${esc(G.counts.coaxialGroups||0)} соосных ступеней`:'ожидает распознавание'}</small></div><strong>${G?'OK':'—'}</strong></div><div class="feature"><i>▱</i><div>Drawing Intelligence<small>${G?`${assemblyDrawingProfile(r).profile} · безопасный выбор главного вида · контекст детали/сборки`:'ожидает распознавание геометрии'}</small></div><strong>${G?'OK':'—'}</strong></div><div class="feature editor-feature"><i>✎</i><div>Drawing Editor<small>${G?'перемещение · скрытие · текст · допуски · Ra · сварные обозначения · undo/redo':'ожидает чертёж'}</small></div><strong>${G?'OK':'—'}</strong></div><div class="feature brep-feature"><i>⬡</i><div>ROZFOOD B-Rep Core<small>${r.brep?`${esc(r.brep.counts?.vertices||0)} V · ${esc(r.brep.counts?.edges||0)} E · ${esc(r.brep.counts?.faces||0)} F · ${esc(r.brep.counts?.shells||0)} shell · ${r.brep.faceIdentity==='source-face-blocks'?'FACE-BLOCK':'INFERRED'} · ${r.brep.topologyComplete?'FULL':'LOD'}`:'ожидает 3D mesh'}</small></div><strong>${r.brep?'OK':'—'}</strong></div><div class="feature"><i>◎</i><div>Exact Parasolid B-Rep<small>Следующий уровень ядра: исходные аналитические NURBS/Surface/Curve из Parasolid. v1.6.0 уже строит собственную V/E/F/Shell-топологию по FaceTessellations, но не выдаёт её за точный Parasolid.</small></div><strong>α</strong></div>`;}
 
 
 function componentBounds(componentId){
@@ -197,12 +200,23 @@ function componentBounds(componentId){
 function componentDimensions(componentId){
   const r=state.rec,part=componentLocalRecord(r,componentId);if(!r||!part||!componentId)return[];
   const R=part.recognition=part.recognition||recognizeTessellationGeometry(part,{maxFeatures:320});
+  const graph=part.featureGraph=part.featureGraph||buildFeatureGraph(part);
   const out=[],seen=new Set(),push=(x,key)=>{if(seen.has(key))return;seen.add(key);out.push(x)};
   const b=componentBounds(componentId);
   if(b){['X','Y','Z'].forEach((a,i)=>push({type:`Габарит ${a}`,label:a,value:b.size[i],unit:'mm',confidence:1,source:'COMPONENT_BOUNDS',componentId},`B:${a}`));}
-  for(const p of R.holePatterns||[]){if(p.componentId!==componentId)continue;push({type:p.pcd?'Группа отверстий · PCD':'Группа отверстий',label:`${p.count}×Ø`,value:p.diameter,unit:'mm',confidence:p.confidence,source:p.verified?'VERIFIED_HOLE_PATTERN':'TESS_HOLE_PATTERN',count:p.count,pcd:p.pcd,componentId},`HP:${p.count}:${p.diameter.toFixed(2)}:${p.pcd?Math.round(p.pcd*10):0}`);if(p.pcd)push({type:'Делительная окружность',label:'PCD Ø',value:p.pcd,unit:'mm',confidence:p.confidence,source:p.verified?'VERIFIED_PCD':'TESS_PCD',count:p.count,componentId},`PCD:${Math.round(p.pcd*10)}`)}
-  for(const c of R.cylinders||[]){if(c.componentId!==componentId)continue;const dk=Math.round(c.diameter*100)/100,lk=Math.round(c.length*100)/100;push({type:c.type==='hole'?'Отверстие':'Цилиндр',label:'Ø',value:c.diameter,unit:'mm',confidence:c.confidence,source:c.verified?'VERIFIED_CYLINDER':'TESS_CYLINDER',componentId},`D:${c.type}:${dk}`);if(c.length>1)push({type:'Длина цилиндра',label:'L',value:c.length,unit:'mm',confidence:Math.max(.65,c.confidence-.05),source:c.verified?'VERIFIED_CYLINDER_LENGTH':'TESS_CYLINDER_LENGTH',componentId},`L:${lk}`);if(out.length>30)break}
-  for(const p of R.planeSpacings||[]){if(p.componentId!==componentId)continue;push({type:'Расстояние плоскостей',label:'L',value:p.spacing,unit:'mm',confidence:p.confidence,source:p.verified?'VERIFIED_PLANE_SPACING':'TESS_PLANE_SPACING',componentId},`PS:${Math.round(p.spacing*10)}`);if(out.length>34)break}
+  if(graph.profile==='AXIAL_PART'){
+    push({type:'Общая длина',label:'L',value:graph.overallLength,unit:'mm',confidence:graph.confidence,source:'VERIFIED_FEATURE_OVERALL',componentId},'FG:L');
+    push({type:'Наружный диаметр',label:'Ø',value:graph.bodyDiameter,unit:'mm',confidence:graph.confidence,source:'VERIFIED_FEATURE_DIAMETER',componentId},'FG:BODY');
+    if(graph.stepDiameter)push({type:'Диаметр ступени',label:'Ø',value:graph.stepDiameter,unit:'mm',confidence:.96,source:'VERIFIED_FEATURE_STEP',componentId},'FG:STEPD');
+    if(graph.stepLength)push({type:'Длина ступени',label:'L',value:graph.stepLength,unit:'mm',confidence:.96,source:'VERIFIED_FEATURE_STEP',componentId},'FG:STEPL');
+    for(const group of [...new Map((graph.chamfers||[]).map(chamfer=>[(Math.round(chamfer.size*20)/20).toFixed(2),[]])).keys()]){const size=Number(group),count=(graph.chamfers||[]).filter(chamfer=>Math.abs(chamfer.size-size)<.08).length;push({type:'Фаска',label:`${count}×45°`,value:size,unit:'mm',confidence:.96,source:'VERIFIED_FEATURE_CHAMFER',componentId,count},`FG:CH:${group}`)}
+  }else if(graph.profile==='CROSS_ASSEMBLY'){
+    for(const [type,value,key] of [['Диаметр ступицы',graph.hubDiameter,'HUB'],['Центральное отверстие',graph.boreDiameter,'BORE'],['Толщина ступицы',graph.thickness,'THICK'],['Диаметр стержней',graph.rodDiameter,'ROD']])if(value)push({type,label:type.includes('Толщина')?'L':'Ø',value,unit:'mm',confidence:graph.confidence,source:'VERIFIED_SUBASSEMBLY_FEATURE',componentId},`FG:${key}`);
+    if(graph.holeCount)push({type:'Группа отверстий',label:`${graph.holeCount}×Ø`,value:graph.holeDiameter,unit:'mm',confidence:.97,source:'VERIFIED_SUBASSEMBLY_PATTERN',count:graph.holeCount,pcd:graph.holePcd,componentId},'FG:HOLES');
+  }
+  for(const p of R.holePatterns||[]){push({type:p.pcd?'Группа отверстий · PCD':'Группа отверстий',label:`${p.count}×Ø`,value:p.diameter,unit:'mm',confidence:p.confidence,source:p.verified?'VERIFIED_HOLE_PATTERN':'TESS_HOLE_PATTERN',count:p.count,pcd:p.pcd,componentId},`HP:${p.count}:${p.diameter.toFixed(2)}:${p.pcd?Math.round(p.pcd*10):0}`);if(p.pcd)push({type:'Делительная окружность',label:'PCD Ø',value:p.pcd,unit:'mm',confidence:p.confidence,source:p.verified?'VERIFIED_PCD':'TESS_PCD',count:p.count,componentId},`PCD:${Math.round(p.pcd*10)}`)}
+  for(const c of R.cylinders||[]){const dk=Math.round(c.diameter*100)/100,lk=Math.round(c.length*100)/100;push({type:c.type==='hole'?'Отверстие':'Цилиндр',label:'Ø',value:c.diameter,unit:'mm',confidence:c.confidence,source:c.verified?'VERIFIED_CYLINDER':'TESS_CYLINDER',componentId},`D:${c.type}:${dk}`);if(c.length>1)push({type:'Длина цилиндра',label:'L',value:c.length,unit:'mm',confidence:Math.max(.65,c.confidence-.05),source:c.verified?'VERIFIED_CYLINDER_LENGTH':'TESS_CYLINDER_LENGTH',componentId},`L:${lk}`);if(out.length>30)break}
+  for(const p of R.planeSpacings||[]){push({type:'Расстояние плоскостей',label:'L',value:p.spacing,unit:'mm',confidence:p.confidence,source:p.verified?'VERIFIED_PLANE_SPACING':'TESS_PLANE_SPACING',componentId},`PS:${Math.round(p.spacing*10)}`);if(out.length>34)break}
   return out.slice(0,36);
 }
 function contextualDimensions(){
@@ -211,12 +225,12 @@ function contextualDimensions(){
 }
 function dimensionSymbol(x){
   const label=String(x?.label||'');
-  if(label.startsWith('Ø')||['TESS_CYLINDER','VERIFIED_CYLINDER','TESS_PCD','VERIFIED_PCD'].includes(x?.source))return ['TESS_PCD','VERIFIED_PCD'].includes(x?.source)?'PCD Ø':'Ø';
-  if(['TESS_HOLE_PATTERN','VERIFIED_HOLE_PATTERN'].includes(x?.source))return `${x.count||''}×Ø`;
+  if(label.startsWith('Ø')||['TESS_CYLINDER','VERIFIED_CYLINDER','TESS_PCD','VERIFIED_PCD','VERIFIED_FEATURE_DIAMETER','VERIFIED_SUBASSEMBLY_FEATURE'].includes(x?.source)&&!String(x?.type||'').includes('Толщина'))return ['TESS_PCD','VERIFIED_PCD'].includes(x?.source)?'PCD Ø':'Ø';
+  if(['TESS_HOLE_PATTERN','VERIFIED_HOLE_PATTERN','VERIFIED_SUBASSEMBLY_PATTERN'].includes(x?.source))return `${x.count||''}×Ø`;
   if(label.startsWith('L')||['TESS_CYLINDER_LENGTH','VERIFIED_CYLINDER_LENGTH','TESS_PLANE_SPACING','VERIFIED_PLANE_SPACING'].includes(x?.source))return 'L';
   return ['X','Y','Z'].includes(label)?label:'';
 }
-function dimensionSourceLabel(x){const verified=String(x?.source||'').startsWith('VERIFIED_');const prefix=verified?'проверено':'распознано';return ['TESS_CYLINDER','VERIFIED_CYLINDER'].includes(x.source)?`${prefix}: цилиндр`:['TESS_CYLINDER_LENGTH','VERIFIED_CYLINDER_LENGTH'].includes(x.source)?`${prefix}: длина`:['TESS_HOLE_PATTERN','VERIFIED_HOLE_PATTERN'].includes(x.source)?(x.pcd?`${prefix}: группа отверстий · PCD Ø${fmt(x.pcd,2)}`:`${prefix}: повторяющиеся отверстия`):['TESS_PCD','VERIFIED_PCD'].includes(x.source)?`${prefix}: делительная окружность`:['TESS_PLANE_SPACING','VERIFIED_PLANE_SPACING'].includes(x.source)?`${prefix}: параллельные плоскости`:x.source==='COMPONENT_BOUNDS'?'локальный габарит SLDPRT':'габарит TESS'}
+function dimensionSourceLabel(x){const verified=String(x?.source||'').startsWith('VERIFIED_');const prefix=verified?'проверено':'распознано';if(String(x?.source||'').startsWith('VERIFIED_FEATURE_'))return'Feature Graph · производственный элемент';if(String(x?.source||'').startsWith('VERIFIED_SUBASSEMBLY_'))return'подсборка · объединённая геометрия';return ['TESS_CYLINDER','VERIFIED_CYLINDER'].includes(x.source)?`${prefix}: цилиндр`:['TESS_CYLINDER_LENGTH','VERIFIED_CYLINDER_LENGTH'].includes(x.source)?`${prefix}: длина`:['TESS_HOLE_PATTERN','VERIFIED_HOLE_PATTERN'].includes(x.source)?(x.pcd?`${prefix}: группа отверстий · PCD Ø${fmt(x.pcd,2)}`:`${prefix}: повторяющиеся отверстия`):['TESS_PCD','VERIFIED_PCD'].includes(x.source)?`${prefix}: делительная окружность`:['TESS_PLANE_SPACING','VERIFIED_PLANE_SPACING'].includes(x.source)?`${prefix}: параллельные плоскости`:x.source==='COMPONENT_BOUNDS'?'локальный габарит выбранного компонента':'габарит TESS'}
 function renderDimensions(){
   const r=state.rec,d=contextualDimensions();
   if(r.geometryAvailable!==false&&d.length){
@@ -225,27 +239,26 @@ function renderDimensions(){
     $('#dimensionsTable').innerHTML=d.map(x=>{const sym=dimensionSymbol(x);return `<tr><td>${esc(x.type)}</td><td>${esc(sym||x.label)}</td><td>${fmt(x.value)} ${esc(x.unit||'mm')}</td><td>${Math.round((x.confidence||0)*100)}% · ${esc(x.source||'TESS')}</td></tr>`}).join('');
   }else{
     $('#dimensionCards').classList.add('empty');$('#dimensionCards').textContent='Встроенная геометрия не найдена — габариты недоступны.';
-    $('#dimensionsTable').innerHTML='<tr><td colspan="4">v1.5.1 сохраняет VERIFIED-геометрию, строит V/E/F/Shell B-Rep topology и сохраняет ручную доводку листа. Exact Parasolid surface/curve data пока не декодируется.</td></tr>';
+    $('#dimensionsTable').innerHTML='<tr><td colspan="4">v1.6.0 сохраняет VERIFIED-геометрию, строит V/E/F/Shell B-Rep topology и сохраняет ручную доводку листа. Exact Parasolid surface/curve data пока не декодируется.</td></tr>';
   }
 }
 
 
 function renderAssembly(){
   const r=state.rec,root=$('#assemblyBody'),n=r.nativeAssembly,components=n.components||[],geo=r.geometryAvailable!==false;
-  const brepByComponent=new Map((r.brep?.components||[]).map(x=>[x.componentId,x]));
   const treeRows=components.map(c=>{
-    const id=c.instances?.[0]||'',bt=id?brepByComponent.get(id):null;
-    return `<li ${id?`data-component-id="${esc(id)}" data-component-name="${esc(c.name)}" class="selectable-component"`:''}><span>${c.type==='assembly'?'▣':'◫'} ${esc(c.name)}</span><em>×${c.count}</em><small>${esc(c.file)}${bt?` · B-Rep ${esc(bt.faces)}F / ${esc(bt.shells)} shell`:''}</small></li>`;
+    const id=c.instances?.[0]||'',bt=id?selectionTopology(id):null;
+    return `<li ${id?`data-component-id="${esc(id)}" data-component-name="${esc(c.name)}" class="selectable-component"`:''}><span>${c.type==='assembly'?'▣':'◫'} ${esc(c.name)}</span><em>×${c.count}</em><small>${esc(c.file)}${bt?` · B-Rep ${esc(bt.faces)}F / ${esc(bt.shells)} shell${c.type==='assembly'?` · ${esc(bt.parts)} дочерн. дет.`:''}`:''}</small></li>`;
   }).join('')||'<li class="muted">Компоненты не извлечены из этого контейнера</li>';
   const bomRows=components.map((c,i)=>{
-    const id=c.instances?.[0]||'',bt=id?brepByComponent.get(id):null,attrs=id?`data-component-id="${esc(id)}" data-component-name="${esc(c.name)}" class="bom-component selectable-component" title="Выбрать компонент в 3D"`:'';
-    return `<div>${i+1}</div><div ${attrs}><b>${esc(c.name)}</b><small>${esc(c.file)} · ${c.type==='assembly'?'подсборка':'деталь'}${bt?` · B-Rep ${esc(bt.faces)}F / ${esc(bt.shells)} shell`:''}</small></div><div>${c.count}</div>`;
+    const id=c.instances?.[0]||'',bt=id?selectionTopology(id):null,attrs=id?`data-component-id="${esc(id)}" data-component-name="${esc(c.name)}" class="bom-component selectable-component" title="Выбрать компонент в 3D"`:'';
+    return `<div>${i+1}</div><div ${attrs}><b>${esc(c.name)}</b><small>${esc(c.file)} · ${c.type==='assembly'?'подсборка':'деталь'}${bt?` · B-Rep ${esc(bt.faces)}F / ${esc(bt.shells)} shell${c.type==='assembly'?` · ${esc(bt.parts)} дочерн. дет.`:''}`:''}</small></div><div>${c.count}</div>`;
   }).join('');
-  root.innerHTML=`<div class="assembly-head"><div><h3>${esc(n.root)} · SLDASM</h3><p class="hint">B-Rep Core v1.5.1 · ${esc(n.container)} · полностью локально</p></div><span class="adapter-badge">SLDASM</span></div><div class="assembly-grid"><section><h4>Дерево компонентов</h4><ul class="component-tree"><li><b>▾ ${esc(n.root)}</b><ul>${treeRows}</ul></li></ul></section><section><h4>BOM · ${components.length} позиций</h4><div class="bom bom-wide"><div class="head">№</div><div class="head">Компонент</div><div class="head">Кол-во</div>${bomRows}</div><p class="hint bom-hint">Нажмите на позицию BOM — компонент выделится в 3D. После выбора доступен чертёж детали.</p></section></div><div class="assembly-actions"><button data-open-assembly-drawing>Открыть производственный сборочный чертёж</button><button data-open-part-drawing ${state.selectedComponentId?'':'disabled'}>Чертёж выбранной детали</button></div><div class="native-note"><b>v1.5.1:</b> структура/BOM читаются из нативных потоков SLDASM, а поверх доступной FaceTessellations строится собственная V/E/F/Shell-топология. <b>3D:</b> ${geo?`собрано из FaceTessellations с матрицами вхождений (${esc(n.mappedOccurrences||0)} размещено / ${esc(n.triangles||0)} треугольников сцены).`:'встроенная тесселяция в файле не найдена.'} Verified Geometry подтверждает аналитические плоскости/цилиндры по fit-критериям, а Drawing Intelligence безопасно выбирает GENERAL/AXIAL и даёт контекстные размеры выбранной детали; редактор позволяет вручную довести проекции, размеры, позиции, допуски и обозначения. Exact Parasolid B-Rep пока не декодируется; B-Rep Core v1.5.1 является faceted topology и явно это маркирует.</div>`;
+  root.innerHTML=`<div class="assembly-head"><div><h3>${esc(n.root)} · SLDASM</h3><p class="hint">B-Rep Core v1.6.0 · ${esc(n.container)} · полностью локально</p></div><span class="adapter-badge">SLDASM</span></div><div class="assembly-grid"><section><h4>Дерево компонентов</h4><ul class="component-tree"><li><b>▾ ${esc(n.root)}</b><ul>${treeRows}</ul></li></ul></section><section><h4>BOM · ${components.length} позиций</h4><div class="bom bom-wide"><div class="head">№</div><div class="head">Компонент</div><div class="head">Кол-во</div>${bomRows}</div><p class="hint bom-hint">Нажмите на позицию BOM — деталь или вся подсборка выделится и впишется в 3D.</p></section></div><div class="assembly-actions"><button data-open-assembly-drawing>Открыть производственный сборочный чертёж</button><button data-open-part-drawing ${state.selectedComponentId?'':'disabled'}>Чертёж выбранного компонента</button></div><div class="native-note"><b>v1.6.0:</b> выбранная SLDASM-подсборка рекурсивно собирается из дочерних SLDPRT и возвращается в собственную систему координат. <b>3D:</b> ${geo?`собрано из FaceTessellations с матрицами вхождений (${esc(n.mappedOccurrences||0)} размещено / ${esc(n.triangles||0)} треугольников сцены).`:'встроенная тесселяция в файле не найдена.'} Feature Graph распознаёт осевые ступени/фаски и крестовины; Drawing Planner выбирает производственный профиль AXIAL/CROSS/GENERAL. Exact Parasolid B-Rep пока не декодируется; ядро остаётся честной faceted topology.</div>`;
 }
 
 
-$('#assemblyBody').addEventListener('click',e=>{const comp=e.target.closest('[data-component-id]');if(comp){viewer.setSelectedComponent(comp.dataset.componentId);state.selectedComponentId=comp.dataset.componentId;state.selectedComponentName=comp.dataset.componentName||comp.querySelector('span')?.textContent?.replace(/^[◫▣]\s*/,'')||'компонент';updateDrawingModeAvailability();renderDimensions();switchTab('model');{const bt=state.rec?.brep?.components?.find(c=>c.componentId===state.selectedComponentId);$('#selectionInfo').textContent=`${state.selectedComponentName}${bt?` · ${bt.faces}F · ${bt.shells} shell`:''}`;}log('Выбран компонент 3D: '+state.selectedComponentName+'.');return;}const part=e.target.closest('[data-open-part-drawing]');if(part){if(!state.selectedComponentId)return;state.drawingMode='partDetail';updateDrawingModeAvailability();switchTab('drawing');renderCurrentDrawing();log('Открыт чертёж выбранной детали.');return;}const btn=e.target.closest('[data-open-assembly-drawing]');if(!btn)return;state.drawingMode='assemblyDetailed';updateDrawingModeAvailability();switchTab('drawing');renderCurrentDrawing();log('Открыт производственный сборочный чертёж.');});
+$('#assemblyBody').addEventListener('click',e=>{const comp=e.target.closest('[data-component-id]');if(comp){viewer.setSelectedComponent(comp.dataset.componentId);state.selectedComponentId=comp.dataset.componentId;state.selectedComponentName=comp.dataset.componentName||comp.querySelector('span')?.textContent?.replace(/^[◫▣]\s*/,'')||'компонент';updateDrawingModeAvailability();renderDimensions();switchTab('model');{const stats=selectionTopology(state.selectedComponentId);$('#selectionInfo').textContent=`${state.selectedComponentName}${stats?` · ${stats.faces}F · ${stats.shells} shell · ${stats.parts} дет.`:''}`;}log('Выбран компонент 3D: '+state.selectedComponentName+'.');return;}const part=e.target.closest('[data-open-part-drawing]');if(part){if(!state.selectedComponentId)return;state.drawingMode='partDetail';updateDrawingModeAvailability();switchTab('drawing');renderCurrentDrawing();log('Открыт чертёж выбранного компонента.');return;}const btn=e.target.closest('[data-open-assembly-drawing]');if(!btn)return;state.drawingMode='assemblyDetailed';updateDrawingModeAvailability();switchTab('drawing');renderCurrentDrawing();log('Открыт производственный сборочный чертёж.');});
 
 function fitDrawingSheet(){const ws=$('#drawingView'),svg=$('#drawingSvg');if(!ws||!svg)return;svg.classList.add('fit-sheet');drawingNavigator.fit();requestAnimationFrame(()=>{ws.scrollTop=0;ws.scrollLeft=Math.max(0,(ws.scrollWidth-ws.clientWidth)/2);});}
 function scheduleDrawingFit(){requestAnimationFrame(()=>fitDrawingSheet());}

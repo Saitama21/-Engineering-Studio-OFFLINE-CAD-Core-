@@ -1,5 +1,6 @@
 const EPS = 1e-12;
 const componentCache = new WeakMap();
+const descendantCache = new WeakMap();
 
 function subtract(a, b) {
   return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -96,15 +97,65 @@ function assemblyToLocalNormal(normal, inverseLinear) {
 function localizeFace(face, inverseLinear, translation) {
   return {
     ...face,
+    sourceComponentId: face.sourceComponentId || face.componentId || '',
     loops: (face.loops || []).map(loop => (loop || []).map(point => assemblyToLocalPoint(point, inverseLinear, translation))),
     normals: (face.normals || []).map(normal => assemblyToLocalNormal(normal, inverseLinear)),
   };
 }
 
+function occurrencesOf(record) {
+  return record?.occurrences || record?.instances || [];
+}
+
 /**
- * Returns one component occurrence in the coordinate system of its source
- * SLDPRT. The assembly mesh stays untouched; only detail/dimension consumers
- * receive the inverse occurrence transform.
+ * Returns the selected occurrence plus every nested occurrence below it.
+ * Faces in SLDASM are owned by leaf SLDPRT occurrences, while the BOM may
+ * select an intermediate SLDASM occurrence. Keeping this relation explicit is
+ * the shared selection contract for the viewer, dimensions and drawings.
+ */
+export function componentDescendantIds(record, componentId) {
+  if (!record || !componentId) return [];
+  let byComponent = descendantCache.get(record);
+  if (!byComponent) {
+    byComponent = new Map();
+    descendantCache.set(record, byComponent);
+  }
+  if (byComponent.has(componentId)) return [...byComponent.get(componentId)];
+
+  const children = new Map();
+  for (const occurrence of occurrencesOf(record)) {
+    const parentId = occurrence?.parent;
+    if (!parentId) continue;
+    const list = children.get(parentId) || [];
+    list.push(occurrence.id);
+    children.set(parentId, list);
+  }
+  const ids = [];
+  const visited = new Set();
+  const stack = [componentId];
+  while (stack.length) {
+    const id = stack.pop();
+    if (!id || visited.has(id)) continue;
+    visited.add(id);
+    ids.push(id);
+    const nested = children.get(id) || [];
+    for (let index = nested.length - 1; index >= 0; index -= 1) stack.push(nested[index]);
+  }
+  byComponent.set(componentId, ids);
+  return [...ids];
+}
+
+export function componentDrawableIds(record, componentId) {
+  const faceIds = new Set((record?.faces || []).map(face => face.componentId).filter(Boolean));
+  return componentDescendantIds(record, componentId).filter(id => faceIds.has(id));
+}
+
+/**
+ * Returns one component occurrence in the coordinate system of its source.
+ * A leaf SLDPRT contributes its own faces. A selected SLDASM subassembly
+ * contributes every descendant SLDPRT face and removes the selected
+ * subassembly's world transform once, preserving all child-to-parent
+ * positions. The assembly mesh stays untouched.
  */
 export function componentLocalRecord(record, componentId) {
   if (!record || !componentId) return null;
@@ -115,20 +166,28 @@ export function componentLocalRecord(record, componentId) {
   }
   if (byComponent.has(componentId)) return byComponent.get(componentId);
 
-  const sourceFaces = (record.faces || []).filter(face => face.componentId === componentId);
+  const sourceComponentIds = componentDrawableIds(record, componentId);
+  const acceptedIds = new Set(sourceComponentIds.length ? sourceComponentIds : [componentId]);
+  const sourceFaces = (record.faces || []).filter(face => acceptedIds.has(face.componentId));
   if (!sourceFaces.length) {
     byComponent.set(componentId, null);
     return null;
   }
 
-  const occurrence = (record.occurrences || record.instances || []).find(item => item.id === componentId);
+  const occurrence = occurrencesOf(record).find(item => item.id === componentId);
   const inverseLinear = inverseLinearFromTransform(occurrence?.transform);
   const translation = occurrence?.transform
     ? [occurrence.transform[12] * 1000, occurrence.transform[13] * 1000, occurrence.transform[14] * 1000]
     : [0, 0, 0];
   const faces = inverseLinear
-    ? sourceFaces.map(face => localizeFace(face, inverseLinear, translation))
-    : sourceFaces.map(face => ({...face, loops: (face.loops || []).map(loop => (loop || []).map(point => [...point]))}));
+    ? sourceFaces.map(face => ({...localizeFace(face, inverseLinear, translation), selectionComponentId: componentId}))
+    : sourceFaces.map(face => ({
+      ...face,
+      sourceComponentId: face.sourceComponentId || face.componentId || '',
+      selectionComponentId: componentId,
+      loops: (face.loops || []).map(loop => (loop || []).map(point => [...point])),
+      normals: (face.normals || []).map(normal => [...normal]),
+    }));
   const tessellationBounds = boundsOfFaces(faces);
   const sourceBounds = sourceBoundsFromOccurrence(occurrence, tessellationBounds);
   const local = {
@@ -140,7 +199,10 @@ export function componentLocalRecord(record, componentId) {
     recognition: null,
     componentId,
     componentOccurrence: occurrence || null,
-    coordinateFrame: inverseLinear ? 'component-local' : 'assembly-fallback',
+    componentType: occurrence?.type || (sourceComponentIds.length > 1 ? 'assembly' : 'part'),
+    sourceComponentIds,
+    descendantOccurrenceIds: componentDescendantIds(record, componentId),
+    coordinateFrame: inverseLinear ? (occurrence?.type === 'assembly' ? 'subassembly-local' : 'component-local') : 'assembly-fallback',
     assemblyTransformRemoved: Boolean(inverseLinear),
   };
   byComponent.set(componentId, local);
@@ -148,5 +210,8 @@ export function componentLocalRecord(record, componentId) {
 }
 
 export function clearComponentLocalCache(record) {
-  if (record) componentCache.delete(record);
+  if (record) {
+    componentCache.delete(record);
+    descendantCache.delete(record);
+  }
 }

@@ -1,4 +1,4 @@
-// ROZFOOD Engineering Studio v2.7.0 — Helical / Spline Feature Reconstruction Core
+// ROZFOOD Engineering Studio v2.8.0 — Helical / Spline Feature Reconstruction Core
 // Reconstructs engineering primitives from verified FaceTessellations recognition.
 // This is intentionally deterministic/offline and does not claim exact Parasolid decoding.
 
@@ -136,7 +136,7 @@ export function reconstructAnalyticGeometry(rec){
   }));
   const planes=(R.planes||[]).filter(p=>p.confidence>=.88).map((p,i)=>({id:`PLN-${i+1}`,kind:'plane',componentId:p.componentId||null,faceKey:p.faceKey||null,normal:norm(p.normal),origin:p.origin.slice(),area:p.area||0,confidence:p.confidence}));
   const faceKeys=new Set([...cylinders.map(c=>c.faceKey),...planes.map(p=>p.faceKey)].filter(Boolean));
-  const out={version:'2.7.0',source:'verified-tessellation-analytics',exactParasolid:false,cylinders,planes,patterns,recognizedFaceKeys:faceKeys,counts:{cylinders:cylinders.length,planes:planes.length,patterns:patterns.length,cadBoundaries:0}};
+  const out={version:'2.8.0',source:'verified-tessellation-analytics',exactParasolid:false,cylinders,planes,patterns,recognizedFaceKeys:faceKeys,counts:{cylinders:cylinders.length,planes:planes.length,patterns:patterns.length,cadBoundaries:0}};
   cache.set(rec,out);return out;
 }
 
@@ -215,7 +215,7 @@ export function analyticSectionCurves(rec,planePoint,planeNormal,{circleSegments
 
 
 
-// --- v2.7.0 Helical / spline feature reconstruction ---------------------------------
+// --- v2.8.0 Helical / spline feature reconstruction ---------------------------------
 // FaceTessellations often preserves the boundary of a swept helical plate very well even
 // when it does not expose the original SolidWorks spline/helix entity.  Reconstruct those
 // boundaries analytically instead of drawing hundreds of tessellation chords.

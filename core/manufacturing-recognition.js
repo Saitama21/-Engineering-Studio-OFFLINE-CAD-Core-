@@ -52,7 +52,7 @@ function detectFillets(rec){
     const sweep=(c.coverageRad||0)*180/Math.PI;
     if(sweep<18||sweep>175)continue;
     if(c.radius>diag*.12||c.length<Math.max(.4,c.radius*.8))continue;
-    result.push({componentId:c.componentId,kind:'fillet',radius:c.radius,axis:c.axis,axisPoint:c.axisPoint,length:c.length,sweepDeg:sweep,confidence:clamp(c.confidence*.91,0,1),source:'partial-cylinder-fit'});
+    result.push({componentId:c.componentId,kind:'fillet',radius:c.radius,axis:c.axis,axisPoint:c.axisPoint,length:c.length,sweepDeg:sweep,coverageRad:c.coverageRad||0,faceKey:c.faceKey||null,modelId:c.modelId||null,confidence:clamp(c.confidence*.91,0,1),source:'partial-cylinder-fit'});
   }
   return uniqueBy(result,x=>`${x.componentId}|${Math.round(x.radius*100)}|${Math.round(x.length*10)}`);
 }

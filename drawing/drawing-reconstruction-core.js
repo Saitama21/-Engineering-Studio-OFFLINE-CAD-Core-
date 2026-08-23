@@ -1,4 +1,5 @@
-// ROZFOOD Engineering Studio v2.8.0 — CAD Edge Graph / Drawing Reconstruction Core
+import {classifyContourEdge} from './contour-semantics-core.js';
+// ROZFOOD Engineering Studio v6.0.0 — Contour Semantics / Drawing Reconstruction Core
 // Faceted source in, engineering linework out. No AI / no server dependency.
 
 const dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
@@ -82,11 +83,23 @@ export function buildCadEdgeGraph(rec){
   for(const g of groups.values())for(const e of g.edges.values()){
     if(e.count!==1)continue; // interior tessellation chord inside one original CAD face
     const k=edgeKey(e.a,e.b,g.componentId,q);let x=global.get(k);
-    if(!x){x={a:e.a,b:e.b,componentId:g.componentId,normals:[],faces:0,faceKeys:[]};global.set(k,x)}
+    if(!x){x={a:e.a,b:e.b,componentId:g.componentId,normals:[],faces:0,faceKeys:[],contributors:[]};global.set(k,x)}
     let n=[0,0,0];for(const z of e.normals)n=add(n,z);n=norm(n);x.normals.push(n);x.faces++;x.faceKeys.push(g.faceKey);
+    let contributor=x.contributors.find(c=>c.componentId===g.componentId);if(!contributor){contributor={componentId:g.componentId,normals:[],faceKeys:[],faces:0};x.contributors.push(contributor)}contributor.normals.push(n);contributor.faceKeys.push(g.faceKey);contributor.faces++;
   }
-  const edges=[...global.values()];
-  const out={edges,quantization:q,sourceFaceGroups:groups.size};cadEdgeCache.set(rec,out);return out;
+  // v3.7: collapse physically coincident CAD boundaries across assembly components.
+  // The per-component pass above is still required to remove each face's internal tessellation,
+  // but identical 3D edges from touching parts must become one drawing edge before projection/HLR.
+  const shared=new Map();let sharedCollapsed=0;
+  for(const e of global.values()){
+    const aa=qpt(e.a,q),bb=qpt(e.b,q),k=aa<bb?aa+'|'+bb:bb+'|'+aa;let x=shared.get(k);
+    if(!x){x={...e,componentIds:[e.componentId],contributors:(e.contributors||[]).map(c=>({...c,normals:[...(c.normals||[])],faceKeys:[...(c.faceKeys||[])]}))};shared.set(k,x);continue}
+    sharedCollapsed++;for(const n of e.normals||[])x.normals.push(n);for(const fk of e.faceKeys||[])if(!x.faceKeys.includes(fk))x.faceKeys.push(fk);
+    for(const c of e.contributors||[]){let dst=x.contributors.find(z=>z.componentId===c.componentId);if(!dst){dst={componentId:c.componentId,normals:[],faceKeys:[],faces:0};x.contributors.push(dst)}for(const n of c.normals||[])dst.normals.push(n);for(const fk of c.faceKeys||[])if(!dst.faceKeys.includes(fk))dst.faceKeys.push(fk);dst.faces+=(c.faces||0)}
+    if(!x.componentIds.includes(e.componentId))x.componentIds.push(e.componentId);x.componentId=x.componentIds.length===1?x.componentIds[0]:'MULTI';x.faces+=(e.faces||0);
+  }
+  const edges=[...shared.values()];
+  const out={edges,quantization:q,sourceFaceGroups:groups.size,sharedCollapsed};cadEdgeCache.set(rec,out);return out;
 }
 
 function classifyEdge(edge,viewDir,{featureCos=.985,tangentCos=.9996}={}){
@@ -114,8 +127,8 @@ function classifyEdge(edge,viewDir,{featureCos=.985,tangentCos=.9996}={}){
 export function engineeringLinework(rec,viewDir,options={}){
   const {edges}=buildCadEdgeGraph(rec),out=[];
   for(const edge of edges){
-    const c=classifyEdge(edge,viewDir,options);
-    if(c.draw)out.push({...edge,kind:c.kind});
+    const c=classifyContourEdge(edge,viewDir,rec,options);
+    if(c.draw)out.push({...edge,kind:c.kind,semanticRole:c.role});
   }
   return out;
 }
@@ -180,5 +193,5 @@ export function visibleEdgeSegments(edge,s,field,{samples=33,refine=5}={}){
 }
 export function reconstructionStats(rec,viewDir){
   const triangleTopology=buildDrawingTopology(rec),cad=buildCadEdgeGraph(rec),line=engineeringLinework(rec,viewDir);
-  return{rawTriangleEdges:triangleTopology.edges.length,cadEdges:cad.edges.length,engineeringEdges:line.length,suppressedTriangulation:Math.max(0,triangleTopology.edges.length-cad.edges.length),suppressedByView:Math.max(0,cad.edges.length-line.length),quantization:cad.quantization,sourceFaceGroups:cad.sourceFaceGroups};
+  return{rawTriangleEdges:triangleTopology.edges.length,cadEdges:cad.edges.length,engineeringEdges:line.length,suppressedTriangulation:Math.max(0,triangleTopology.edges.length-cad.edges.length),suppressedShared3D:cad.sharedCollapsed||0,suppressedByView:Math.max(0,cad.edges.length-line.length),quantization:cad.quantization,sourceFaceGroups:cad.sourceFaceGroups};
 }

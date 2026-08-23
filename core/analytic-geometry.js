@@ -1,4 +1,12 @@
-// ROZFOOD Engineering Studio v2.8.0 — Helical / Spline Feature Reconstruction Core
+import {refinePlanarCadCurves} from './exact-curve-reconstruction.js';
+import {featureViewCurves,reconstructCadFeatureEntities,tagChamferBoundaryCurves} from './cad-feature-entities.js';
+import {applySurfaceContinuityPolicy} from './surface-continuity.js';
+import {reconstructSurfaceModel,surfaceBoundaryDecision} from './surface-type-reconstruction.js';
+import {reconstructSurfaceEdgePrimitives,surfaceDerivedEdgeKey} from './surface-edge-primitives.js';
+import {reconstructSurfaceTrims} from './surface-trimming-core.js';
+import {reconstructExactSilhouettes} from './exact-silhouette-core.js';
+import {parametricHelicoidSilhouettes,reconstructParametricHelicoids} from './parametric-helical-surface-core.js';
+// ROZFOOD Engineering Studio v5.0.0 — Surface-derived Analytic / Exact Curve Reconstruction Core
 // Reconstructs engineering primitives from verified FaceTessellations recognition.
 // This is intentionally deterministic/offline and does not claim exact Parasolid decoding.
 
@@ -79,28 +87,28 @@ function cadFaceBoundaries(rec,planes,{circleSegments=120}={}){
   let cached=cadBoundaryCache.get(rec);if(cached)return cached;
   const planeByKey=new Map((planes||[]).filter(p=>p.faceKey).map(p=>[p.faceKey,p])),groups=new Map();
   for(const f of rec?.faces||[]){const fk=faceKeyOf(f);let g=groups.get(fk);if(!g)groups.set(fk,g=[]);g.push(f)}
-  const diag=modelDiag(rec),q=Math.max(.0015,Math.min(.03,diag*8e-6)),simplifyTol=Math.max(.018,diag*8e-5),curves=[];
+  const diag=modelDiag(rec),q=Math.max(.0015,Math.min(.03,diag*8e-6)),simplifyTol=Math.max(.018,diag*8e-5),curves=[],surfaceModel=reconstructSurfaceModel(rec);
   const cylinderKeys=new Set((rec?.recognition?.cylinders||[]).filter(c=>c.confidence>=.78&&c.faceKey).map(c=>c.faceKey));
   for(const [fk,faces] of groups){
     if(cylinderKeys.has(fk))continue; // exact cylinder curves/silhouettes are rebuilt separately
     const plane=planeByKey.get(fk)||null,emap=new Map();
     for(const f of faces){const loop=f.loops?.[0]||[];if(loop.length<3)continue;for(let i=0;i<loop.length;i++){const a=loop[i],b=loop[(i+1)%loop.length],k=undirectedKey(a,b,q);let x=emap.get(k);if(!x){x={a,b,count:0};emap.set(k,x)}x.count++}}
-    const boundary=[...emap.values()].filter(e=>e.count===1);if(!boundary.length)continue;
+    const boundary=[...emap.values()].filter(e=>e.count===1&&!surfaceModel.suppressedEdgeKeys.has((faces[0]?.componentId||'RAW')+'|'+undirectedKey(e.a,e.b,q)));if(!boundary.length)continue;
     for(let pts of chainBoundaryEdges(boundary,q)){
-      if(pts.length<2)continue;const closed=len(sub(pts[0],pts.at(-1)))<q*2.5;if(closed&&pts.length>3)pts=pts.slice(0,-1);
+      if(pts.length<2)continue;const originalPts=pts.slice(),sourceEdgeKeys=[];for(let si=0;si<originalPts.length-1;si++)sourceEdgeKeys.push(undirectedKey(originalPts[si],originalPts[si+1],q));const closed=len(sub(pts[0],pts.at(-1)))<q*2.5;if(closed&&pts.length>3)pts=pts.slice(0,-1);
       if(plane&&closed&&pts.length>=6){
         const {u,v}=planeBasis(plane.normal),o=plane.origin,p2=pts.map(p=>[dot(sub(p,o),u),dot(sub(p,o),v)]),fit=circleFit2D(p2),coverage=fit?angularCoverage2D(p2,fit.cx,fit.cy):0;
         if(fit&&fit.radius>q*3&&fit.rms<Math.max(.025,fit.radius*.0018,diag*3e-5)&&coverage>Math.PI*1.82){
           const center=add(o,add(mul(u,fit.cx),mul(v,fit.cy))),samples=[];for(let i=0;i<=circleSegments;i++){const t=i/circleSegments*Math.PI*2;samples.push(add(center,add(mul(u,Math.cos(t)*fit.radius),mul(v,Math.sin(t)*fit.radius))))}
-          curves.push({kind:'circle',role:'cad-face-boundary',points:samples,componentId:plane.componentId,faceKey:fk,source:plane,radius:fit.radius,center});continue
+          curves.push({kind:'circle',role:'cad-face-boundary',points:samples,componentId:plane.componentId,faceKey:fk,source:plane,radius:fit.radius,center,sourceEdgeKeys});continue
         }
       }
       if(plane&&!closed&&pts.length>=5){
         const arc=circularArcFromPlanarChain(pts,plane,diag,{circleSegments});
-        if(arc){curves.push({kind:'arc',role:'cad-face-boundary',points:arc.points,componentId:plane.componentId,faceKey:fk,source:plane,radius:arc.radius,center:arc.center,sweep:arc.sweep});continue}
+        if(arc){curves.push({kind:'arc',role:'cad-face-boundary',points:arc.points,componentId:plane.componentId,faceKey:fk,source:plane,radius:arc.radius,center:arc.center,sweep:arc.sweep,sourceEdgeKeys});continue}
       }
       let work=closed?simplifyClosed3(pts,simplifyTol):rdp3(pts,simplifyTol);
-      if(work.length>=2)curves.push({kind:closed?'loop':'polyline',role:'cad-face-boundary',points:work,componentId:faces[0]?.componentId||null,faceKey:fk,source:plane});
+      if(work.length>=2)curves.push({kind:closed?'loop':'polyline',role:'cad-face-boundary',points:work,componentId:faces[0]?.componentId||null,faceKey:fk,source:plane,sourceEdgeKeys});
     }
   }
   cached=curves;cadBoundaryCache.set(rec,cached);return cached
@@ -145,6 +153,7 @@ export function cylinderEndpoints(c){const a=norm(c.axis),h=c.length/2;return[ad
 /** Returns true when this edge belongs entirely to a recognized analytic surface. */
 export function edgeIsAnalyticSurface(edge,analytic){
   if(!analytic||!edge)return false;
+  if(surfaceDerivedEdgeKey(edge,analytic.surfaceEdgePrimitives))return true;
   const keys=edge.faceKeys||[];return keys.length>0&&keys.every(k=>analytic.recognizedFaceKeys.has(k));
 }
 
@@ -299,14 +308,42 @@ function helicalFeatureCurves(rec,boundaries,{samplesPerTurn=96}={}){
   return{curves:unique.concat(connectors),suppressedComponents,candidateFaceKeys,count:unique.length,connectorCount:connectors.length,frame};
 }
 
+
+function sphereSurfaceSilhouettes(rec,viewDir,{segments=128}={}){
+  const M=reconstructSurfaceModel(rec),d=norm(viewDir),out=[];let surfaces=0;for(const s of M.surfaces.values())if(s.type==='sphere-inferred'&&s.params?.center&&s.params?.radius>0){surfaces++;const c=s.params.center,r=s.params.radius,seed=Math.abs(d[2])<.82?[0,0,1]:[1,0,0],u=norm(cross(d,seed)),v=norm(cross(d,u)),pts=[];for(let i=0;i<=segments;i++){const t=i/segments*Math.PI*2;pts.push(add(c,add(mul(u,Math.cos(t)*r),mul(v,Math.sin(t)*r))))}out.push({kind:'circle',role:'sphere-silhouette',silhouette:true,points:pts,componentId:s.componentId,faceKey:s.faceKey,sourceSurface:{faceKey:s.faceKey,type:'sphere-inferred'}})}return{curves:out,count:out.length,surfaces};
+}
+
 export function analyticViewCurves(rec,viewDir,options={}){
   const A=reconstructAnalyticGeometry(rec),out=[];
+  const exactSilhouettes=reconstructExactSilhouettes(rec,viewDir,{samples:options.detail?112:80,torusSamples:options.detail?240:180,minConfidence:options.minConfidence??.68});
+  const helicalSilhouettes=parametricHelicoidSilhouettes(rec,viewDir,{samples:options.detail?320:220});
+  const sphereSilhouettes=sphereSurfaceSilhouettes(rec,viewDir,{segments:options.detail?180:128});
   for(const c of A.cylinders){
     if(c.confidence<(options.minConfidence??.82))continue;
     if(!c.full&&(c.coverageRad||0)<Math.PI*1.45)continue;
-    out.push(...cylinderViewCurves(c,viewDir,options));
+    const ad=Math.abs(dot(norm(c.axis),norm(viewDir)));
+    // v6.0: side/oblique cylinder silhouettes are generated by Exact Silhouette Core.
+    // Keep end-on circles and physical end rims from the legacy analytic cylinder primitive.
+    const legacy=cylinderViewCurves(c,viewDir,options);
+    out.push(...legacy.filter(x=>ad>.985||x.role==='rim'));
   }
-  const boundaries=cadFaceBoundaries(rec,A.planes,{circleSegments:options.circleSegments||120});
+  const featureBundle=featureViewCurves(rec,{arcSegments:options.detail?112:80,viewDir});
+  const features=featureBundle.features;
+  // Fillet cylindrical patches are rebuilt from their fitted radius/sweep. Their tessellated
+  // face boundary must not compete with the reconstructed tangent edges/arcs.
+  const surfaceModel=reconstructSurfaceModel(rec);
+  const surfaceTrims=reconstructSurfaceTrims(rec);
+  const surfaceEdges=reconstructSurfaceEdgePrimitives(rec);
+  const rawBoundaries=cadFaceBoundaries(rec,A.planes,{circleSegments:options.circleSegments||120}).filter(c=>!features.filletFaceKeys.has(c.faceKey)).filter(c=>{
+    const keys=c.sourceEdgeKeys||[];return !keys.length||!keys.every(k=>surfaceEdges.sourceEdgeKeys.has(k));
+  });
+  // v4.0: boundaries that are internal to one reconstructed continuous surface are removed
+  // before curve fitting/HLR. Curves with no reliable surface relationship remain conservative.
+  const boundaries=rawBoundaries.filter(c=>{
+    const keys=c.faceKeys||c.source?.faceKeys||[];
+    if(keys.length<2)return true;
+    return surfaceBoundaryDecision(rec,keys).draw!==false;
+  });
   const helical=helicalFeatureCurves(rec,boundaries,{samplesPerTurn:options.detail?128:96});
   // For components with a verified helix fit, replace long noisy tessellation boundary loops by
   // the smooth reconstructed feature curves. Keep compact end/planar boundaries as context.
@@ -316,9 +353,14 @@ export function analyticViewCurves(rec,viewDir,options={}){
     let min=Infinity,max=-Infinity;const frame=helical.frame;for(const p of pts){const t=dot(sub(p,frame.axisPoint),frame.axis);min=Math.min(min,t);max=Math.max(max,t)}
     return max-min<Math.max(20,frame.minor*.045);
   });
-  out.push(...filtered,...helical.curves);
-  for(const c of filtered)if(c.faceKey)A.recognizedFaceKeys.add(c.faceKey);
+  const refined=refinePlanarCadCurves(rec,filtered),tagged=tagChamferBoundaryCurves(refined.curves,rec);
+  const continuityBundle=applySurfaceContinuityPolicy(featureBundle.curves,rec,viewDir,{tangentMode:options.tangentMode||'removed'});
+  out.push(...surfaceEdges.curves,...tagged,...continuityBundle.curves,...helical.curves,...exactSilhouettes.curves,...helicalSilhouettes.curves,...sphereSilhouettes.curves);
+  for(const c of tagged)if(c.faceKey)A.recognizedFaceKeys.add(c.faceKey);
+  for(const c of continuityBundle.curves)if(c.faceKey)A.recognizedFaceKeys.add(c.faceKey);
   for(const c of helical.curves)if(c.faceKey)A.recognizedFaceKeys.add(c.faceKey);
-  A.counts.cadBoundaries=filtered.length;A.counts.helicalCurves=helical.count;A.counts.helicalConnectors=helical.connectorCount;
-  return{analytic:A,curves:out};
+  A.featureEntities=features;
+  A.surfaceEdgePrimitives=surfaceEdges;
+  A.counts.surfacePrimitiveCurves=surfaceEdges.stats.surfaceCurves;A.counts.surfaceIntersectionCurves=surfaceEdges.stats.intersections||0;A.counts.surfacePrimitiveLines=surfaceEdges.stats.lines;A.counts.surfacePrimitiveArcs=surfaceEdges.stats.arcs;A.counts.surfacePrimitiveCircles=surfaceEdges.stats.circles;A.counts.surfacePrimitiveReplacedEdges=surfaceEdges.stats.replacedEdges;A.counts.surfaceTrimmedCurves=surfaceEdges.stats.trimmedCurves||0;A.counts.surfaceTrimFallbacks=surfaceEdges.stats.trimFallbacks||0;A.counts.surfaceTrimDomains=surfaceTrims.counts.domains||0;A.counts.surfaceTrimTriangles=surfaceTrims.counts.trimTriangles||0;A.surfaceTrims=surfaceTrims;A.counts.surfaceTypes=surfaceModel.counts.surfaces;A.counts.surfaceSuppressed=surfaceModel.counts.suppressedBoundaries;A.counts.surfacePlanes=surfaceModel.counts.planes;A.counts.surfaceCylinders=surfaceModel.counts.cylinders;A.counts.surfaceCones=surfaceModel.counts.cones||0;A.counts.surfaceTori=surfaceModel.counts.tori||0;A.counts.surfaceHelical=surfaceModel.counts.helical;A.surfaceModel=surfaceModel;A.counts.cadBoundaries=tagged.length;A.counts.helicalCurves=helical.count;A.counts.helicalConnectors=helical.connectorCount;A.counts.exactLines=refined.stats.lines;A.counts.exactArcs=refined.stats.arcs;A.counts.refinedBoundaries=refined.stats.replaced;A.counts.exactFillets=features.counts.fillets;A.counts.exactChamfers=features.counts.chamfers;A.counts.featureCurves=continuityBundle.curves.length;A.counts.tangentCandidates=continuityBundle.stats.tangentCandidates;A.counts.tangentRemoved=continuityBundle.stats.tangentRemoved;A.counts.filletSilhouettes=continuityBundle.stats.filletSilhouettes;A.counts.g1Boundaries=continuityBundle.stats.g1Boundaries;A.surfaceContinuity=continuityBundle.continuity;A.exactSilhouettes=exactSilhouettes;A.parametricHelicoids=reconstructParametricHelicoids(rec);A.helicalSilhouettes=helicalSilhouettes;A.sphereSilhouettes=sphereSilhouettes;A.counts.parametricHelicoids=A.parametricHelicoids.counts.fitted;A.counts.helicoidSilhouetteCurves=helicalSilhouettes.counts.silhouetteCurves;A.counts.sphereSilhouetteCurves=sphereSilhouettes.count;A.counts.surfaceSpheres=surfaceModel.counts.spheres||0;A.counts.exactSilhouetteCurves=exactSilhouettes.counts.curves;A.counts.exactSilhouetteCylinders=exactSilhouettes.counts.cylinderSurfaces;A.counts.exactSilhouetteCones=exactSilhouettes.counts.coneSurfaces;A.counts.exactSilhouetteTori=exactSilhouettes.counts.torusSurfaces;
+  return{analytic:A,curves:out,features,surfaceContinuity:continuityBundle};
 }

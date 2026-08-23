@@ -1,6 +1,9 @@
 import {parseSLDASM} from './import/sldasm-adapter.js';
 import {recognizeTessellationGeometry,recognitionDimensions} from './core/tess-recognition.js';
 import {buildFacetedBRep} from './core/brep-core.js';
+import {reconstructTopologicalBRep} from './core/topological-brep-reconstruction.js';
+import {orientTopologicalBRep} from './core/brep-orientation-core.js';
+import {reconstructSolidRegions} from './core/solid-region-core.js';
 import {recognizeManufacturingFeatures,manufacturingDimensions} from './core/manufacturing-recognition.js';
 
 const MAX_TRANSFER_FACES=80000;
@@ -96,12 +99,17 @@ self.onmessage=async e=>{
     const types=rec.recognition?['plane','cylinder','hole','axis','brep-topology','chamfer','fillet','thread-candidate','sheet-metal','bend']:[];
     stage='prepare-transfer';
     dimensions=slimForTransfer(rec,dimensions);
-    stage='brep-core';
+    stage='topological-brep-core-v5.0';
     if(rec.geometryAvailable){
-      rec.brep=buildFacetedBRep(rec,{maxDisplayEdges:42000,sharpAngleDeg:28});
-      rec.edges=rec.brep.displayEdges||[];
+      const faceted=buildFacetedBRep(rec,{maxDisplayEdges:42000,sharpAngleDeg:28});
+      rec.brep=reconstructTopologicalBRep(rec,{maxDisplayEdges:42000});
+      rec.brepOrientation=orientTopologicalBRep(rec);
+      rec.solidRegions=reconstructSolidRegions(rec);
+      rec.edges=rec.brep.displayEdges?.length?rec.brep.displayEdges:(faceted.displayEdges||[]);
       delete rec.brep.displayEdges;
       const bc=rec.brep.counts||{};
+      rec.counts.brepOrientedFaces=rec.brepOrientation?.counts?.faces||0;rec.counts.brepLoopReversals=rec.brepOrientation?.counts?.loopReversals||0;rec.counts.brepOrientationConflicts=rec.brepOrientation?.counts?.orientationConflicts||0;
+      rec.counts.solidRegions=rec.solidRegions?.counts?.regions||0;rec.counts.materialRegions=rec.solidRegions?.counts?.materialRegions||0;rec.counts.voidRegions=rec.solidRegions?.counts?.voidRegions||0;
       rec.counts.brepVertices=bc.vertices||0;rec.counts.brepEdges=bc.edges||0;rec.counts.brepFaces=bc.faces||0;rec.counts.brepShells=bc.shells||0;rec.counts.brepClosedShells=bc.closedShells;
       rec.counts.vertices=bc.vertices||rec.counts.vertices;rec.counts.edges=bc.edges||0;rec.counts.shells=bc.shells||0;if(Number.isFinite(bc.closedShells))rec.counts.solids=bc.closedShells;
     }

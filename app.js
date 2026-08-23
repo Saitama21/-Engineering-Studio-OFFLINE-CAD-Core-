@@ -10,8 +10,8 @@ import {buildFeatureGraph} from './core/feature-graph.js';
 import {parseSLDDRW} from './import/slddrw-adapter.js';
 import {renderFlatPattern} from './drawing/flat-pattern.js';
 
-const APP_VERSION='2.1.0';
-const BUILD_LABEL='FEATURE RECOGNITION CORE ALPHA';
+const APP_VERSION='2.2.0';
+const BUILD_LABEL='ENGINEERING REFERENCE LIBRARY ALPHA';
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const viewer=new WireframeViewer($('#viewerCanvas'));
 viewer.onSelect=(id,instance)=>{
@@ -169,7 +169,7 @@ function renderCurrentDrawing(){
 }
 
 function drawingEditorKey(){return [state.fileName||'untitled',state.fileSize||0,state.drawingMode,['partDetail','flatPattern'].includes(state.drawingMode)?(state.selectedComponentId||'part'):'sheet'].join('|')}
-function finalizeDrawingRender(){drawingNavigator.captureBase({reset:true});drawingEditor.setKey(drawingEditorKey());drawingEditor.refresh()}
+function finalizeDrawingRender(){drawingNavigator.captureBase({reset:true});drawingEditor.setKey(drawingEditorKey());drawingEditor.refresh();const applied=drawingEditor.applyReferences();if(applied)log(`Эталонные инженерные правила применены: ${applied}.`)}
 function updateEditorSelection(info){
   const sel=$('#editorSelection'),txt=$('#editorText'),tp=$('#editorTolPlus'),tm=$('#editorTolMinus');
   if(!sel)return;
@@ -359,6 +359,7 @@ $('#applyEditorText')?.addEventListener('click',()=>drawingEditor.setSelectedTex
 $('#applyEditorTolerance')?.addEventListener('click',()=>drawingEditor.setTolerance($('#editorTolPlus')?.value||'',$('#editorTolMinus')?.value||''));
 $('#toggleEditorVisibility')?.addEventListener('click',()=>drawingEditor.toggleVisibility());
 $('#resetEditorSelected')?.addEventListener('click',()=>drawingEditor.resetSelected());
+$('#makeEditorReference')?.addEventListener('click',()=>{const info=drawingEditor.selectionInfo();if(!info){log('Эталон: сначала выберите объект в режиме Правка.');return;}const ref=drawingEditor.makeSelectedReference();if(ref)log(`Эталон сохранён: ${ref.label} · ${ref.signature.role}. Правила будут использоваться для совместимых объектов.`);});
 $('#addEditorNote')?.addEventListener('click',()=>drawingEditor.addNote('Примечание'));
 $('#addEditorRoughness')?.addEventListener('click',()=>drawingEditor.addRoughness('Ra 3.2'));
 $('#addEditorWeld')?.addEventListener('click',()=>drawingEditor.addWeld('Сварной шов'));

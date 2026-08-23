@@ -27,10 +27,13 @@ function readXY(text){
 export class DrawingEditor{
   constructor(svg,{onSelectionChange=()=>{},onStateChange=()=>{}}={}){
     this.svg=svg;this.onSelectionChange=onSelectionChange;this.onStateChange=onStateChange;
-    this.enabled=false;this.key='';this.data={items:{},custom:[]};this.undoStack=[];this.redoStack=[];this.selectedId=null;this.drag=null;
+    this.enabled=false;this.key='';this.data={items:{},custom:[]};this.undoStack=[];this.redoStack=[];this.selectedId=null;this.drag=null;this.referenceLibrary=this._loadReferences();
     this._bind();
   }
   storageKey(){return `rozfood-drawing-edits-v1:${this.key}`}
+  referenceStorageKey(){return 'rozfood-engineering-reference-library-v1'}
+  _loadReferences(){try{return JSON.parse(localStorage.getItem(this.referenceStorageKey())||'[]')}catch{return []}}
+  _saveReferences(){try{localStorage.setItem(this.referenceStorageKey(),JSON.stringify(this.referenceLibrary))}catch{}}
   setKey(key){
     const next=String(key||'untitled');if(next===this.key)return;
     this.key=next;this.selectedId=null;this.undoStack=[];this.redoStack=[];this.load();
@@ -49,10 +52,17 @@ export class DrawingEditor{
   _decorateBase(){
     this.svg.querySelectorAll('[data-editor-id]').forEach(el=>{if(el.dataset.editorCustom!=='1'){el.removeAttribute('data-editor-id');el.classList.remove('editor-selected');}});
     const seen=new Set();let idx=0;
+    // Whole generated engineering views are first-class editable/reference objects.
+    for(const target of this.svg.querySelectorAll('g[data-reconstruction], g[data-stamp-format]')){
+      if(target.closest('[data-editor-custom="1"]')||seen.has(target))continue;seen.add(target);
+      const role=target.hasAttribute('data-stamp-format')?'stamp':'view';
+      const id=`a${String(idx++).padStart(4,'0')}-${role}-${target.getAttribute('data-reconstruction')||target.getAttribute('data-stamp-format')||''}`;target.dataset.editorId=id;target.dataset.editorRole=role;
+      if(!target.dataset.editorBaseTransform)target.dataset.editorBaseTransform=target.getAttribute('transform')||'';
+    }
     for(const text of this.svg.querySelectorAll('text')){
       if(text.closest('[data-editor-custom="1"]')||text.hasAttribute('data-editor-generated'))continue;
-      const target=candidateTarget(text,this.svg);if(seen.has(target))continue;seen.add(target);
-      const id=`a${String(idx++).padStart(4,'0')}-${keyText(target)}`;target.dataset.editorId=id;
+      const target=candidateTarget(text,this.svg);if(seen.has(target)||target.closest?.('[data-editor-id]'))continue;seen.add(target);
+      const id=`a${String(idx++).padStart(4,'0')}-${keyText(target)}`;target.dataset.editorId=id;target.dataset.editorRole='annotation';
       if(!target.dataset.editorBaseTransform)target.dataset.editorBaseTransform=target.getAttribute('transform')||'';
     }
   }
@@ -115,7 +125,22 @@ export class DrawingEditor{
   _markSelected(el){el.classList.add('editor-selected')}
   deselect(){this.selectedId=null;this.svg.querySelectorAll('.editor-selected').forEach(n=>n.classList.remove('editor-selected'));this.onSelectionChange(null);this.onStateChange(this.status())}
   selectionInfo(){
-    if(!this.selectedId)return null;const el=this._find(this.selectedId);const edit=this._peekFor(this.selectedId);const custom=this.data.custom.find(x=>x.id===this.selectedId);return{id:this.selectedId,text:edit.text??(el?targetText(el):custom?.text||''),hidden:!!edit.hidden,tolPlus:edit.tolPlus||'',tolMinus:edit.tolMinus||'',custom:!!custom,kind:custom?.kind||'element'}
+    if(!this.selectedId)return null;const el=this._find(this.selectedId);const edit=this._peekFor(this.selectedId);const custom=this.data.custom.find(x=>x.id===this.selectedId);return{id:this.selectedId,text:edit.text??(el?targetText(el):custom?.text||''),hidden:!!edit.hidden,tolPlus:edit.tolPlus||'',tolMinus:edit.tolMinus||'',custom:!!custom,kind:custom?.kind||el?.dataset?.editorRole||'element',reference:!!el?.dataset?.engineeringReference}
+  }
+  _referenceSignature(el){
+    if(!el)return null;let b={x:0,y:0,width:0,height:0};try{b=el.getBBox()}catch{}
+    const role=el.dataset.editorRole||'element',profile=this.svg.querySelector('[data-drawing-profile]')?.getAttribute('data-drawing-profile')||'',mode=this.svg.querySelector('[data-drawing-mode]')?.getAttribute('data-drawing-mode')||'';
+    return{role,profile,mode,tag:el.tagName.toLowerCase(),text:targetText(el).slice(0,80),aspect:b.height?Math.round(b.width/b.height*100)/100:0};
+  }
+  makeSelectedReference(label=''){
+    if(!this.selectedId)return null;const el=this._find(this.selectedId);if(!el)return null;const edit=deepClone(this._peekFor(this.selectedId));const signature=this._referenceSignature(el);const ref={id:`ref-${Date.now().toString(36)}`,createdAt:new Date().toISOString(),label:String(label||targetText(el)||`${signature.role} эталон`).slice(0,80),signature,rule:{dx:safeNum(edit.dx),dy:safeNum(edit.dy),hidden:!!edit.hidden,text:edit.text??null,tolPlus:edit.tolPlus||'',tolMinus:edit.tolMinus||''}};
+    this.referenceLibrary.push(ref);if(this.referenceLibrary.length>100)this.referenceLibrary.shift();this._saveReferences();el.dataset.engineeringReference='1';this.onSelectionChange(this.selectionInfo());this.onStateChange(this.status());return ref;
+  }
+  references(){return deepClone(this.referenceLibrary)}
+  applyReferences(){
+    let applied=0;for(const el of this.svg.querySelectorAll('[data-editor-id]')){if(this.data.items[el.dataset.editorId])continue;const sig=this._referenceSignature(el);const candidates=this.referenceLibrary.filter(r=>r.signature?.role===sig.role&&(!r.signature.profile||r.signature.profile===sig.profile));if(!candidates.length)continue;
+      const scored=candidates.map(r=>({r,score:(r.signature.mode===sig.mode?3:0)+(r.signature.tag===sig.tag?1:0)+(r.signature.text&&r.signature.text===sig.text?6:0)+(Math.abs((r.signature.aspect||0)-(sig.aspect||0))<.08?2:0)})).sort((a,b)=>b.score-a.score);if(scored[0].score<4)continue;const rule=scored[0].r.rule||{},e=this._editFor(el.dataset.editorId);for(const k of ['dx','dy','hidden','text','tolPlus','tolMinus'])if(rule[k]!=null)e[k]=rule[k];el.dataset.engineeringReference='1';applied++;}
+    if(applied){this.save();this._applyAll()}return applied;
   }
   setSelectedText(text){if(!this.selectedId)return;this._commit(()=>{this._editFor(this.selectedId).text=String(text??'')})}
   setTolerance(plus,minus){if(!this.selectedId)return;this._commit(()=>{const e=this._editFor(this.selectedId);e.tolPlus=String(plus||'').trim();e.tolMinus=String(minus||'').trim()})}

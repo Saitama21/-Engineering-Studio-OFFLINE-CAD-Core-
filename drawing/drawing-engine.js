@@ -95,7 +95,7 @@ export function renderDrawing(svg,drawing,options={}){
 
   if(mode.notes&&!mode.assembly) s+=renderNotes(drawing,{x:55,y:598,w:640,h:50},colors);
   s+=renderTitleBlock({projectName,fileName,unit:drawing.unit,mode:mode.label,rec:drawing.rec},{x:720,y:610,w:440,h:112},colors);
-  s+=`<text x="55" y="715" fill="${colors.muted}" font-family="system-ui,-apple-system,sans-serif" font-size="11">ROZFOOD ENGINEERING STUDIO · Drawing Intelligence v1.7.0 · SLDASM FaceTessellations локально</text>`;
+  s+=`<text x="55" y="715" fill="${colors.muted}" font-family="system-ui,-apple-system,sans-serif" font-size="11">ROZFOOD ENGINEERING STUDIO · Drawing Intelligence v2.0 · HSR + Feature Recognition · SLDASM локально</text>`;
   svg.innerHTML=s;
 }
 
@@ -106,7 +106,7 @@ export function serializeDrawing(svg){
 }
 
 function renderProjectionView(drawing,plane,box,c,opt={}){
-  const geom=projectGeometry(drawing.rec,plane);
+  const geom=projectGeometry(drawing.rec,plane,{externalOnly:!!opt.main});
   const ext=geom.extents;
   const spanX=Math.max(ext.max[0]-ext.min[0],1e-6),spanY=Math.max(ext.max[1]-ext.min[1],1e-6);
   const reserve=opt.showOverall?54:24;
@@ -173,6 +173,17 @@ function renderFeatureCallouts(drawing,plane,P,scale,box,c){
     const candidates=projectedFaceOnCircles(drawing.rec,plane).filter(x=>Math.abs(x.r-pattern.holeDiameter/2)<1e-3);
     const target=candidates[0];
     if(target){const q=P(target.center),tx=box.x+box.w-205,ty=box.y+42;s+=`<polyline points="${n(q[0])},${n(q[1])} ${n(tx-12)},${n(ty+4)} ${n(tx)},${n(ty+4)}" fill="none" marker-start="url(#leaderArr)"/><text x="${tx+4}" y="${ty}" stroke="none" font-weight="700">${pattern.count}× ⌀${fmtDim(pattern.holeDiameter)}</text><text x="${tx+4}" y="${ty+17}" stroke="none">равномерно · PCD ⌀${fmtDim(pattern.pcd)}</text>`;}
+  }
+  // Every visible analytical hole receives its own diameter callout. Patterned holes
+  // remain grouped by the PCD callout above; singleton holes are never left unlabeled.
+  const calloutVb=buildVisibilityBuffer(drawing.rec,plane);const visibleHoles=(drawing.rec.manufacturing?.holes||[]).filter(h=>h.full&&axisParallelToDrop(h.axis,plane.drop)&&holeVisibleFromPlane(h,plane,calloutVb));
+  const groupedDiameters=new Set((drawing.rec.manufacturing?.holes||[]).filter(h=>pattern&&Math.abs(h.diameter-pattern.holeDiameter)<1e-3).map(h=>Math.round(h.diameter*100)));
+  let hy=box.y+82;
+  for(const h of visibleHoles.slice(0,8)){
+    if(pattern&&groupedDiameters.has(Math.round(h.diameter*100)))continue;
+    const q=P(projectCenter(h.axisPoint,plane)),rr=(h.radius||h.diameter/2)*scale,tx=Math.min(box.x+box.w-145,q[0]+Math.max(34,rr+18)),ty=Math.max(box.y+34,Math.min(box.y+box.h-34,hy));hy+=22;
+    const suffix=h.holeKind==='through'?' скв.':h.holeKind==='blind'&&h.depth?` ↧${fmtDim(h.depth)}`:h.holeKind==='stepped'?' ступ.':'';
+    s+=`<polyline points="${n(q[0]+rr*.7)},${n(q[1]-rr*.7)} ${n(tx-10)},${n(ty)} ${n(tx)},${n(ty)}" fill="none" marker-start="url(#leaderArr)"/><text x="${n(tx+4)}" y="${n(ty+4)}" stroke="none" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-weight="700">⌀${fmtDim(h.diameter)}${suffix}</text>`;
   }
   // central/major diameters in a face-on view
   const circles=projectedFaceOnCircles(drawing.rec,plane).sort((a,b)=>b.r-a.r);
@@ -251,15 +262,30 @@ function renderTitleBlock(meta,box,c){
   s+=row('ЕДИНИЦЫ',meta.unit,y+33,{mono:true,size:10});
   s+=row('МАСШТАБ','AUTO',y+55,{mono:true,size:10});
   s+=row('СТАТУС','AUTO / VERIFY',y+77,{blue:true,size:9.3});
-  s+=row('ЯДРО','v1.7.0',y+99,{mono:true,size:8.8});
+  s+=row('ЯДРО','v2.0.0',y+99,{mono:true,size:8.8});
   s+='</g>';
   return s;
 }
 
-function projectGeometry(rec,plane){
-  const items=[],points=[];
+function buildVisibilityBuffer(rec,plane){
+  const faces=rec?.faces||[];if(!faces.length)return null;
+  const b=rec.bounds,uv=plane.uv,minU=b.min[uv[0]],maxU=b.max[uv[0]],minV=b.min[uv[1]],maxV=b.max[uv[1]],spanU=Math.max(maxU-minU,1e-6),spanV=Math.max(maxV-minV,1e-6);
+  const cols=180,rows=140,z=new Float32Array(cols*rows);z.fill(-Infinity);
+  const gx=u=>(u-minU)/spanU*(cols-1),gy=v=>(v-minV)/spanV*(rows-1),source=faces,step=source.length>36000?Math.ceil(source.length/36000):1;
+  for(let fi=0;fi<source.length;fi+=step){const loop=source[fi].loops?.[0]||[];if(loop.length<3)continue;for(let ti=1;ti+1<loop.length;ti++){
+    const a=loop[0],bb=loop[ti],c=loop[ti+1],ax=gx(a[uv[0]]),ay=gy(a[uv[1]]),bx=gx(bb[uv[0]]),by=gy(bb[uv[1]]),cx=gx(c[uv[0]]),cy=gy(c[uv[1]]),den=(by-cy)*(ax-cx)+(cx-bx)*(ay-cy);if(Math.abs(den)<1e-9)continue;
+    const x0=Math.max(0,Math.floor(Math.min(ax,bx,cx))),x1=Math.min(cols-1,Math.ceil(Math.max(ax,bx,cx))),y0=Math.max(0,Math.floor(Math.min(ay,by,cy))),y1=Math.min(rows-1,Math.ceil(Math.max(ay,by,cy)));
+    for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){const px=x+.5,py=y+.5,w1=((by-cy)*(px-cx)+(cx-bx)*(py-cy))/den,w2=((cy-ay)*(px-cx)+(ax-cx)*(py-cy))/den,w3=1-w1-w2;if(w1<-.015||w2<-.015||w3<-.015)continue;const depth=w1*a[plane.drop]+w2*bb[plane.drop]+w3*c[plane.drop],idx=y*cols+x;if(depth>z[idx])z[idx]=depth;}
+  }}
+  return{z,cols,rows,minU,minV,spanU,spanV,tol:Math.max(.08,Math.hypot(...(rec.bounds.size||[1,1,1]))*.0025)};
+}
+function sampleVisible3D(p,plane,vb){if(!vb)return true;const x=Math.round((p[plane.uv[0]]-vb.minU)/vb.spanU*(vb.cols-1)),y=Math.round((p[plane.uv[1]]-vb.minV)/vb.spanV*(vb.rows-1));if(x<0||y<0||x>=vb.cols||y>=vb.rows)return true;const front=vb.z[y*vb.cols+x];return !Number.isFinite(front)||p[plane.drop]>=front-vb.tol}
+function edgeVisible3D(a,b,plane,vb){if(!vb)return true;const m=[(a[0]+b[0])/2,(a[1]+b[1])/2,(a[2]+b[2])/2],q1=[a[0]*.75+b[0]*.25,a[1]*.75+b[1]*.25,a[2]*.75+b[2]*.25],q2=[a[0]*.25+b[0]*.75,a[1]*.25+b[1]*.75,a[2]*.25+b[2]*.75];return [a,q1,m,q2,b].filter(p=>sampleVisible3D(p,plane,vb)).length>=2}
+function holeVisibleFromPlane(h,plane,vb=null){if(!h?.axis||!axisParallelToDrop(h.axis,plane.drop))return false;const frontPositive=h.axis[plane.drop]>=0,open=frontPositive?(h.opensMax!==false):(h.opensMin!==false);if(!open)return false;if(!vb)return true;const sign=frontPositive?1:-1,p=[h.axisPoint[0]+h.axis[0]*(h.length||0)*.5*sign,h.axisPoint[1]+h.axis[1]*(h.length||0)*.5*sign,h.axisPoint[2]+h.axis[2]*(h.length||0)*.5*sign];return sampleVisible3D(p,plane,vb)}
+function projectGeometry(rec,plane,{externalOnly=false}={}){
+  const items=[],points=[],vb=externalOnly?buildVisibilityBuffer(rec,plane):null,lineSeen=new Set();
   for(const e of rec.edges||[]){
-    if(e.kind==='line'&&e.p1&&e.p2){const p1=projectCenter(e.p1,plane),p2=projectCenter(e.p2,plane);items.push({kind:'line',p1,p2,instance:e.instance||null});points.push(p1,p2);continue}
+    if(e.p1&&e.p2){if(externalOnly&&!edgeVisible3D(e.p1,e.p2,plane,vb))continue;const p1=projectCenter(e.p1,plane),p2=projectCenter(e.p2,plane),key=[...p1,...p2].map(v=>Math.round(v*1000)).join('|');if(lineSeen.has(key))continue;lineSeen.add(key);items.push({kind:'line',p1,p2,instance:e.instance||null,source:e});points.push(p1,p2);continue}
     if((e.kind==='circle'||e.kind==='ellipse')&&e.placement){
       if(e.kind==='circle'&&axisParallelToDrop(e.placement.axis,plane.drop)){
         const center=projectCenter(e.placement.origin,plane);items.push({kind:'circle',center,r:e.radius,source:e,instance:e.instance||null});points.push([center[0]-e.radius,center[1]-e.radius],[center[0]+e.radius,center[1]+e.radius]);
@@ -268,9 +294,14 @@ function projectGeometry(rec,plane){
       }
     }
   }
+  // Feature Recognition Core supplies exact analytical hole circles even when the
+  // faceted B-Rep edge list has no explicit circular edge. This fixes missing Ø callouts.
+  const holes=(rec.manufacturing?.holes||rec.recognition?.holes||[]).filter(h=>h.full&&axisParallelToDrop(h.axis,plane.drop)&&(!externalOnly||holeVisibleFromPlane(h,plane,vb)));
+  const circleSeen=new Set();
+  for(const h of holes){const center=projectCenter(h.axisPoint,plane),r=h.radius||h.diameter/2,key=[Math.round(center[0]*100),Math.round(center[1]*100),Math.round(r*100)].join('|');if(circleSeen.has(key))continue;circleSeen.add(key);items.push({kind:'circle',center,r,source:h,hole:true,componentId:h.componentId});points.push([center[0]-r,center[1]-r],[center[0]+r,center[1]+r]);}
   if(!points.length){const b=rec.bounds;points.push([b.min[plane.uv[0]],b.min[plane.uv[1]]],[b.max[plane.uv[0]],b.max[plane.uv[1]]])}
   const min=[minOf(points,p=>p[0]),minOf(points,p=>p[1])],max=[maxOf(points,p=>p[0]),maxOf(points,p=>p[1])];
-  return {items,extents:{min,max}};
+  return {items,extents:{min,max},hiddenRemoval:!!vb};
 }
 
 function sampleCurve3D(e,count=48){
@@ -279,7 +310,7 @@ function sampleCurve3D(e,count=48){
   return pts;
 }
 
-function projectedFaceOnCircles(rec,plane){return (rec.edges||[]).filter(e=>e.kind==='circle'&&e.placement&&axisParallelToDrop(e.placement.axis,plane.drop)).map(e=>({center:projectCenter(e.placement.origin,plane),r:e.radius,source:e}))}
+function projectedFaceOnCircles(rec,plane){const out=(rec.edges||[]).filter(e=>e.kind==='circle'&&e.placement&&axisParallelToDrop(e.placement.axis,plane.drop)).map(e=>({center:projectCenter(e.placement.origin,plane),r:e.radius,source:e}));for(const h of rec.manufacturing?.holes||[]){if(!h.full||!axisParallelToDrop(h.axis,plane.drop)||!holeVisibleFromPlane(h,plane))continue;out.push({center:projectCenter(h.axisPoint,plane),r:h.radius||h.diameter/2,source:h,hole:true})}const seen=new Set();return out.filter(x=>{const k=[Math.round(x.center[0]*100),Math.round(x.center[1]*100),Math.round(x.r*100)].join('|');if(seen.has(k))return false;seen.add(k);return true})}
 function projectCenter(p,plane){return [p[plane.uv[0]],p[plane.uv[1]]]}
 function axisParallelToDrop(axis,drop){const a=norm(axis||[0,0,1]);return Math.abs(a[drop])>.985}
 

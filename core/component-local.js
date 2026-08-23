@@ -197,6 +197,7 @@ export function componentLocalRecord(record, componentId) {
     tessellationBounds,
     boundsSource: sourceBounds ? 'sldasm-source-bounds' : 'localized-tessellation',
     recognition: null,
+    manufacturing: null,
     componentId,
     componentOccurrence: occurrence || null,
     componentType: occurrence?.type || (sourceComponentIds.length > 1 ? 'assembly' : 'part'),

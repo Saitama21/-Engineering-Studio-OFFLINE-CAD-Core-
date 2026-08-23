@@ -1,6 +1,7 @@
 import {parseSLDASM} from './import/sldasm-adapter.js';
 import {recognizeTessellationGeometry,recognitionDimensions} from './core/tess-recognition.js';
 import {buildFacetedBRep} from './core/brep-core.js';
+import {recognizeManufacturingFeatures,manufacturingDimensions} from './core/manufacturing-recognition.js';
 
 const MAX_TRANSFER_FACES=80000;
 const MIN_FACES_PER_COMPONENT=64;
@@ -84,9 +85,15 @@ self.onmessage=async e=>{
       rec.counts.verifiedCylinders=rec.recognition.counts.verifiedCylinders||0;
       rec.counts.verifiedHoles=rec.recognition.counts.verifiedHoles||0;
     }
+    stage='feature-recognition-v2';
+    if(rec.geometryAvailable){
+      rec.manufacturing=recognizeManufacturingFeatures(rec);
+      const mc=rec.manufacturing.counts||{};
+      rec.counts.featureHoles=mc.holes||0;rec.counts.chamfers=mc.chamfers||0;rec.counts.fillets=mc.fillets||0;rec.counts.threadCandidates=mc.threads||0;rec.counts.sheetMetal=mc.sheetMetal||0;rec.counts.bends=mc.bends||0;
+    }
     stage='dimensions';
-    let dimensions=rec.geometryAvailable?recognitionDimensions(rec,rec.recognition,{limit:36}):[];
-    const types=rec.recognition?['plane','cylinder','hole','axis','brep-topology']:[];
+    let dimensions=rec.geometryAvailable?[...recognitionDimensions(rec,rec.recognition,{limit:36}),...manufacturingDimensions(rec.manufacturing,{limit:36})]:[];
+    const types=rec.recognition?['plane','cylinder','hole','axis','brep-topology','chamfer','fillet','thread-candidate','sheet-metal','bend']:[];
     stage='prepare-transfer';
     dimensions=slimForTransfer(rec,dimensions);
     stage='brep-core';

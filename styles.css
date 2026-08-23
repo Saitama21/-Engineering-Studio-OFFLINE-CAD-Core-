@@ -195,7 +195,7 @@ html[data-theme="dark"] .drawing-workspace{background:linear-gradient(145deg,#10
 #brepBtn.active{border-color:color-mix(in srgb,var(--accent) 45%,var(--line));background:color-mix(in srgb,var(--accent) 13%,var(--panel));color:var(--accent);font-weight:700}
 .bom-hint{padding:8px 2px 0;margin:0}.bom-component{border-radius:7px}.bom-component:hover{background:color-mix(in srgb,var(--accent) 8%,var(--panel))}
 
-/* v1.9.0 · SLDDRW Reference Reader */
+/* v2.0.0 · Feature Recognition Core Alpha */
 .slddrw-sheet-select{min-height:32px;max-width:180px;padding:5px 28px 5px 9px;border:1px solid var(--line);border-radius:9px;background:var(--panel-2);color:var(--text-strong);font:600 11px system-ui,-apple-system,sans-serif}
 .slddrw-reference-sheet{shape-rendering:auto}.slddrw-reference-bg{fill:#fff}
 .reference-grid{display:grid;grid-template-columns:minmax(240px,.8fr) minmax(300px,1.2fr);gap:14px;margin-top:14px}.reference-grid section{border:1px solid var(--line);border-radius:12px;padding:12px;background:var(--panel-2)}.reference-grid h4{margin:0 0 10px;color:var(--text-strong)}

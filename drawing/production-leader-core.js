@@ -1,4 +1,4 @@
-// ROZFOOD Engineering Studio v14.0.0 — Production Leader Core
+// ROZFOOD Engineering Studio v14.0.1 — Production Leader Core
 // Collision-aware leader/callout router for engineering drawings.
 
 const overlap=(a,b,p=0)=>!(a.x+a.w+p<=b.x||b.x+b.w+p<=a.x||a.y+a.h+p<=b.y||b.y+b.h+p<=a.y);
@@ -38,5 +38,5 @@ export function createProductionLeaderRouter(layout,{sheet={x:80,y:34,w:1554,h:1
     const item={id,text,anchor,end,elbow,box:b,dir:pick.dir};leaders.push(item);return item;
   }
   function render(item){if(!item)return'';const {anchor,end,elbow,box,text,id}=item;return `<g data-production-leader="${esc(id)}" font-family="Arial" fill="#111" stroke="#111" stroke-width=".62"><path d="M${anchor[0].toFixed(2)} ${anchor[1].toFixed(2)}L${elbow[0].toFixed(2)} ${elbow[1].toFixed(2)}L${end[0].toFixed(2)} ${end[1].toFixed(2)}" fill="none"/><path d="M${anchor[0].toFixed(2)} ${anchor[1].toFixed(2)}l7 -2.8l-2 7z"/><rect x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}" rx="2" fill="#fff" stroke="none" opacity=".92"/><text x="${box.x+7}" y="${box.y+box.h*.68}" stroke="none" font-size="${fontSize}">${esc(text)}</text></g>`}
-  return {version:'14.0.0',kernel:'ROZFOOD Production Leader Core',leaders,route,render,renderAll:()=>leaders.map(render).join('')};
+  return {version:'14.0.1',kernel:'ROZFOOD Production Leader Core',leaders,route,render,renderAll:()=>leaders.map(render).join('')};
 }

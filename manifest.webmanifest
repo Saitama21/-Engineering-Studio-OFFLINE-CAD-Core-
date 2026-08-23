@@ -5,7 +5,7 @@
   "display": "standalone",
   "background_color": "#f5f7fa",
   "theme_color": "#ffffff",
-  "description": "Offline CAD v14.0.0 Production Annotation + Functional Dimension + Section Context: face-first B-Rep visibility, analytic surface curves, exact silhouettes, topology-aware line generation, body-aware HLR and production sections. Fully local, no AI/API or server CAD.",
+  "description": "Offline CAD v14.0.1 Production Annotation + Functional Dimension + Section Context: face-first B-Rep visibility, analytic surface curves, exact silhouettes, topology-aware line generation, body-aware HLR and production sections. Fully local, no AI/API or server CAD.",
   "icons": [
     {
       "src": "icons/icon-192.png",

@@ -1,5 +1,5 @@
 import {reconstructParametricHelicoids} from '../core/parametric-helical-surface-core.js';
-// ROZFOOD Engineering Studio v14.0.0 — Functional Dimension Core
+// ROZFOOD Engineering Studio v14.0.1 — Functional Dimension Core
 // Deterministic production dimension selection. Dimensions are selected by assembly function,
 // not only by geometric size, so mating, mounting, envelope and manufacturing dimensions survive
 // while low-value duplicate dimensions are suppressed.
@@ -82,7 +82,7 @@ export function buildFunctionalDimensionPlan(rec,drum,composition,semanticPlan,{
   const critical=all.filter(x=>x.priority>=90);
   const production=all.filter(x=>x.priority>=72);
   return {
-    version:'14.0.0',kernel:'ROZFOOD Functional Dimension Core',
+    version:'14.0.1',kernel:'ROZFOOD Functional Dimension Core',
     envelope,interfaces,diameters,patterns,manufacturing,critical,production,all,
     counts:{all:all.length,critical:critical.length,production:production.length,patterns:patterns.length,matingDiameters:diameters.length},
     note:'Dimensions are selected by assembly function: envelope, mating/interface, mounting pattern and manufacturing semantics. No ML/AI.'

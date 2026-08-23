@@ -1,4 +1,4 @@
-// ROZFOOD Engineering Studio v14.0.0 — Engineering Drawing Composer
+// ROZFOOD Engineering Studio v14.0.1 — Engineering Drawing Composer
 // Deterministic engineering sheet planner. It allocates views, sections, details,
 // dimensions, BOM and stamp as a constrained A2 layout instead of hard-coded pixels.
 
@@ -86,7 +86,7 @@ export function composeDrumA2(rec,plan,{mode='assemblyDetailed',sectionPlan=null
     collisionPairs:0
   };
   for(let i=0;i<occupied.length;i++)for(let j=i+1;j<occupied.length;j++)if(overlap(occupied[i],occupied[j],2))score.collisionPairs++;
-  return {version:'14.0.0',kernel:'ROZFOOD Engineering Drawing Composer',sheet:{format:'A2',W,H,frame},boxes,lanes,occupied,score,note:'Deterministic constrained layout. View slots are driven by model aspect/complexity and protected BOM/title-block regions; no ML/AI is used.'};
+  return {version:'14.0.1',kernel:'ROZFOOD Engineering Drawing Composer',sheet:{format:'A2',W,H,frame},boxes,lanes,occupied,score,note:'Deterministic constrained layout. View slots are driven by model aspect/complexity and protected BOM/title-block regions; no ML/AI is used.'};
 }
 
 export function composerDiagnostics(plan){

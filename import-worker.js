@@ -113,6 +113,11 @@ self.onmessage=async e=>{
       rec.counts.brepVertices=bc.vertices||0;rec.counts.brepEdges=bc.edges||0;rec.counts.brepFaces=bc.faces||0;rec.counts.brepShells=bc.shells||0;rec.counts.brepClosedShells=bc.closedShells;
       rec.counts.vertices=bc.vertices||rec.counts.vertices;rec.counts.edges=bc.edges||0;rec.counts.shells=bc.shells||0;if(Number.isFinite(bc.closedShells))rec.counts.solids=bc.closedShells;
     }
+    // Surface trimming keeps executable UV mapper functions in its internal cache.
+    // They are required only while reconstructing B-Rep inside this worker and are
+    // not valid Structured Clone values for worker -> UI postMessage (Safari/WebKit
+    // throws "The object can not be cloned"). Never transfer worker-only caches.
+    delete rec.surfaceTrims;
     stage='post-message';
     self.postMessage({ok:true,rec,dimensions,types,parseMs:performance.now()-t0,importKind:'sldasm'});
   }catch(err){

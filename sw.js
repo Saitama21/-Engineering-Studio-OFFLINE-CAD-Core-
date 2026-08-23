@@ -1,7 +1,7 @@
-const CACHE='rozfood-engineering-studio-v1.5.0-brep-core-alpha';
+const CACHE='rozfood-engineering-studio-v1.5.1-brep-core-alpha';
 const ASSETS=[
-  './','./index.html','./styles.css?v=1.5.0','./app.js?v=1.5.0','./import-worker.js',
-  './import/sldasm-adapter.js','./core/tess-recognition.js','./core/brep-core.js','./core/math3d.js',
+  './','./index.html','./styles.css?v=1.5.1','./app.js?v=1.5.1','./import-worker.js',
+  './import/sldasm-adapter.js','./core/tess-recognition.js','./core/component-local.js','./core/brep-core.js','./core/math3d.js',
   './drawing/drawing-engine.js','./drawing/tess-recognition-drawing.js','./drawing/assembly-production-sheet-v130.js','./drawing/drawing-editor.js','./drawing/drawing-navigator.js',
   './viewer/wireframe-viewer.js','./manifest.webmanifest',
   './icons/icon-64.png','./icons/icon-96.png','./icons/icon-180.png','./icons/icon-192.png','./icons/icon-512.png'

@@ -140,7 +140,7 @@ export function buildFacetedBRep(rec,{tolerance,maxDisplayEdges=42000,sharpAngle
   const topologyComplete=coverage>.9995;
   const topologyMode=sourceIdentityCoverage>=.5?'source-face-blocks':'inferred-smooth-patches';
   return{
-    version:'1.5.0',kernel:'ROZFOOD B-Rep Core Alpha',source:'SolidWorks FaceTessellations',geometryModel:'vertex-edge-face-shell',faceIdentity:topologyMode,exactParasolid:false,topologyComplete,coverage:round(coverage,4),sourceFaceIdentityCoverage:round(sourceIdentityCoverage,4),toleranceMm:tol,sharpAngleDeg,
+    version:'1.5.1',kernel:'ROZFOOD B-Rep Core Alpha',source:'SolidWorks FaceTessellations',geometryModel:'vertex-edge-face-shell',faceIdentity:topologyMode,exactParasolid:false,topologyComplete,coverage:round(coverage,4),sourceFaceIdentityCoverage:round(sourceIdentityCoverage,4),toleranceMm:tol,sharpAngleDeg,
     counts:{vertices:vertices.length,edges:topoEdgeIds.length,meshEdges:edges.length,faces:brepFaces.length,facets:facets.length,shells:shells.length,closedShells:topologyComplete?closedShells:null,boundaryEdges,sharpEdges,smoothEdges,nonManifoldEdges,internalTriangulationEdges:internalEdges,degenerateFacets:skippedDegenerate,displayEdges:displayEdges.length},
     components,faces:brepFaces.slice(0,3000),shells:topologyComplete?shells.slice(0,2000):[],displayEdges,
     note:topologyComplete?'V/E/F/Shell adjacency построена по всей доступной FaceTessellations-сцене; F использует исходные FaceTessellations face-block identities, когда они доступны. Exact Parasolid Surface/Curve/NURBS ещё не декодированы.':'На тяжёлой сборке V/E/F topology построена по display-LOD для сохранения плавности; shell closure не считается точной. Exact Parasolid Surface/Curve/NURBS ещё не декодированы.'

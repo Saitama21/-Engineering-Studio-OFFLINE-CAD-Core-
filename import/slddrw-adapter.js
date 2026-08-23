@@ -168,8 +168,8 @@ function parseVersion(streamNames){
 
 export async function parseSLDDRW(buffer,{fileName='drawing.slddrw'}={}){
   const container=detectSlddrwContainer(buffer);
-  if(container==='ole2') throw new Error('Этот SLDDRW использует старый OLE2-контейнер (до SOLIDWORKS 2015). В v2.5.0 он пока только определяется, но не читается.');
-  if(container==='opc') throw new Error('Этот файл использует OPC/ZIP-контейнер. В v2.5.0 поддержан modern SLDDRW.');
+  if(container==='ole2') throw new Error('Этот SLDDRW использует старый OLE2-контейнер (до SOLIDWORKS 2015). В v2.6.0 он пока только определяется, но не читается.');
+  if(container==='opc') throw new Error('Этот файл использует OPC/ZIP-контейнер. В v2.6.0 поддержан modern SLDDRW.');
   if(container!=='modern') throw new Error('Неизвестный или повреждённый SLDDRW-контейнер.');
   const {streams,meta}=await readModernStreams(buffer);
   const keys=[...streams.keys()];

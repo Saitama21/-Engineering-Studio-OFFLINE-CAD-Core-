@@ -1,0 +1,12 @@
+ROZFOOD ENGINEERING STUDIO v1.9.0 — SLDDRW REFERENCE READER ALPHA
+
+- База: v1.8.0 Engineering Assembly Drawing Core без отката SLDASM-функций.
+- Импорт теперь принимает .SLDASM и современные .SLDDRW (SOLIDWORKS 2015+ modern chunk container).
+- Добавлен локальный SLDDRW chunk walker: stream-name ROL decode + raw DEFLATE.
+- Читаются SheetPreviews/SheetNames и Images/Sheet_N; встроенный лист показывается как точный сохранённый reference preview.
+- Читаются swXmlContents/KeyWords: имена/структура листов, виды, ссылки, Notes и Displayed Dimension values, когда <Dimension> присутствуют в индексе.
+- Читаются docProps/ISolidWorksInformation.xml: имя документа, формат/масштаб листа, дата сохранения и прочие свойства.
+- Для SLDDRW добавлен read-only reference режим, листы переключаются отдельно; колесо/панорама работают через существующий DrawingNavigator.
+- Размеры из SLDDRW не угадываются: если KeyWords не содержит <Dimension>, UI честно показывает ограничение. Следующий этап — бинарный Contents/Definition CArchive decoder.
+- Добавлен THIRD_PARTY_NOTICES.txt с attribution для публичного interoperability prior art SWFormat/openswx.
+- PWA cache обновлён до v1.9.0.

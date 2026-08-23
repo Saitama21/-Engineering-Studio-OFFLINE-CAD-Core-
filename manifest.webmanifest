@@ -5,7 +5,7 @@
   "display": "standalone",
   "background_color": "#f5f7fa",
   "theme_color": "#ffffff",
-  "description": "Offline SLDASM CAD v1.8.0: reference A2 drum assembly planner, recursive subassembly geometry, model-derived views and dimensions, flattened production BOM, SolidWorks mass properties and production drawing profiles. No AI/API or server CAD.",
+  "description": "Offline CAD v1.9.0: SLDASM Engineering Assembly Drawing Core plus modern SLDDRW Reference Reader with sheet previews, notes, views, references and indexed displayed dimensions. Fully local, no AI/API, SolidWorks or server CAD.",
   "icons": [
     {"src":"icons/icon-192.png","sizes":"192x192","type":"image/png","purpose":"any maskable"},
     {"src":"icons/icon-512.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}

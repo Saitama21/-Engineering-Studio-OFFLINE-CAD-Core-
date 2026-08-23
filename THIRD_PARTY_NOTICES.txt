@@ -1,0 +1,17 @@
+ROZFOOD ENGINEERING STUDIO — third-party / interoperability references
+
+SLDDRW modern chunk-container reader design was informed by:
+
+1) SWFormat — KenM76/swformat
+   License: Apache License 2.0
+   https://github.com/KenM76/swformat
+   Relevant public concepts: modern SOLIDWORKS chunk marker, ROL-obfuscated stream names,
+   raw-DEFLATE stream payloads, SheetPreviews/SheetNames, Images/Sheet_N,
+   swXmlContents/KeyWords and document-property streams.
+
+2) openswx — schwitters/openswx
+   License: MIT
+   Referenced by SWFormat as prior art for the modern chunk walker.
+
+This ROZFOOD browser implementation is read-only, operates on user-provided local files,
+and does not decrypt protected/vault data or require SOLIDWORKS / Document Manager.

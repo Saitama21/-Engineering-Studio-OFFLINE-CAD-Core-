@@ -7,9 +7,10 @@ import {DrawingNavigator} from './drawing/drawing-navigator.js';
 import {recognizeTessellationGeometry} from './core/tess-recognition.js';
 import {componentLocalRecord,componentDrawableIds} from './core/component-local.js';
 import {buildFeatureGraph} from './core/feature-graph.js';
+import {parseSLDDRW} from './import/slddrw-adapter.js';
 
-const APP_VERSION='1.8.0';
-const BUILD_LABEL='ENGINEERING ASSEMBLY DRAWING PLANNER';
+const APP_VERSION='1.9.0';
+const BUILD_LABEL='SLDDRW REFERENCE READER ALPHA';
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const viewer=new WireframeViewer($('#viewerCanvas'));
 viewer.onSelect=(id,instance)=>{
@@ -24,7 +25,7 @@ viewer.onSelect=(id,instance)=>{
   }
 };
 const worker=new Worker('./import-worker.js',{type:'module'});
-let state={fileName:null,fileSize:0,rec:null,dimensions:[],types:[],parseMs:0,drawingMode:'production',selectedComponentId:null,selectedComponentName:''};
+let state={fileName:null,fileSize:0,rec:null,dimensions:[],types:[],parseMs:0,drawingMode:'production',selectedComponentId:null,selectedComponentName:'',importKind:null,slddrwSheetIndex:0};
 let drawingEditMode=false,drawingTool='edit';
 const drawingRenderCache=new Map();
 const drawingEditor=new DrawingEditor($('#drawingSvg'),{onSelectionChange:updateEditorSelection,onStateChange:updateEditorState});
@@ -53,18 +54,33 @@ function setBusy(on){$('#fileInput').disabled=on;$('#offlineStatus').textContent
 
 async function importFile(file){
   const fileName=file.name,fileSize=file.size,ext=(fileName.split('.').pop()||'').toLowerCase();
-  if(ext!=='sldasm'){alert('Эта сборка ROZFOOD ENGINEERING STUDIO принимает только файлы .SLDASM.');return}
-  setBusy(true);state.fileName=fileName;state.fileSize=fileSize;state.importKind='sldasm';
+  if(!['sldasm','slddrw'].includes(ext)){alert('ROZFOOD ENGINEERING STUDIO принимает .SLDASM и .SLDDRW.');return}
+  setBusy(true);state.fileName=fileName;state.fileSize=fileSize;state.importKind=ext;state.selectedComponentId=null;state.selectedComponentName='';state.slddrwSheetIndex=0;
   $('#projectName').textContent=fileName.replace(/\.[^.]+$/,'');
   $('#fileMeta').textContent=`${fileName} · ${(fileSize/1024).toFixed(1)} KB · локально`;
   const buffer=await file.arrayBuffer();
-  log(`Импорт ${fileName}: SLDASM Drawing Intelligence decoder · ${(fileSize/1024).toFixed(1)} KB.`);
-  worker.postMessage({kind:'sldasm',buffer,fileName},[buffer]);
+  if(ext==='sldasm'){
+    log(`Импорт ${fileName}: SLDASM Drawing Intelligence decoder · ${(fileSize/1024).toFixed(1)} KB.`);
+    worker.postMessage({kind:'sldasm',buffer,fileName},[buffer]);
+    return;
+  }
+  log(`Импорт ${fileName}: SLDDRW Reference Reader · ${(fileSize/1024).toFixed(1)} KB.`);
+  try{
+    const ref=await parseSLDDRW(buffer,{fileName});
+    state.rec={kind:'slddrw',drawingRef:ref,geometryAvailable:false,counts:{},nativeAssembly:null};
+    state.dimensions=ref.dimensions||[];drawingRenderCache.clear();
+    $('#projectName').textContent=ref.projectName||fileName.replace(/\.[^.]+$/,'');
+    renderAll();setBusy(false);switchTab('drawing');scheduleDrawingFit();
+    log(`SLDDRW готов: ${ref.streamCount} потоков · ${ref.sheetNames.length||ref.previewCount} лист · ${ref.views.length} видов · ${ref.dimensions.length} индексированных размеров · ${ref.notes.length} примечаний. Интернет не использовался.`);
+    if(ref.warnings?.length)log('SLDDRW: '+ref.warnings[0]);
+  }catch(err){
+    setBusy(false);console.error('SLDDRW import error',err);log('Ошибка SLDDRW: '+(err?.message||err));alert(`Ошибка импорта SLDDRW: ${err?.message||err}`);
+  }
 }
 
 
 worker.onmessage=e=>{
-  setBusy(false);if(!e.data.ok){const where=e.data.stage?` [${e.data.stage}]`:'';log('Ошибка'+where+': '+e.data.error);console.error('SLDASM worker error',e.data);alert(`Ошибка импорта${where}: ${e.data.error}`);return}
+  state.importKind='sldasm';setBusy(false);if(!e.data.ok){const where=e.data.stage?` [${e.data.stage}]`:'';log('Ошибка'+where+': '+e.data.error);console.error('SLDASM worker error',e.data);alert(`Ошибка импорта${where}: ${e.data.error}`);return}
   Object.assign(state,e.data);drawingRenderCache.clear();renderAll();
   const n=state.rec.nativeAssembly;
   if(n?.root)$('#projectName').textContent=n.root;
@@ -74,7 +90,26 @@ worker.onmessage=e=>{
 };
 
 function setEmptyView(title,text){const root=$('#emptyView');root.querySelector('b').textContent=title;root.querySelector('span').textContent=text;root.style.display='grid'}
+function isSlddrw(){return state.importKind==='slddrw'||state.rec?.kind==='slddrw'}
+function slddrwRef(){return state.rec?.drawingRef||null}
+function currentSlddrwPreview(){const ref=slddrwRef();if(!ref)return null;const idx=Math.max(0,Math.min(state.slddrwSheetIndex||0,Math.max(0,(ref.previews?.length||1)-1)));return (ref.previews||[]).find(p=>p.index===idx)||ref.previews?.[idx]||null}
+function renderSlddrwDrawing(){
+  const ref=slddrwRef(),svg=$('#drawingSvg');if(!ref||!svg)return;
+  const p=currentSlddrwPreview();
+  if(p?.dataUrl){svg.setAttribute('viewBox',`0 0 ${p.width} ${p.height}`);svg.innerHTML=`<rect class="slddrw-reference-bg" width="${p.width}" height="${p.height}"/><image class="slddrw-reference-sheet" href="${p.dataUrl}" x="0" y="0" width="${p.width}" height="${p.height}" preserveAspectRatio="xMidYMid meet"/>`;}
+  else{svg.setAttribute('viewBox','0 0 1200 760');svg.innerHTML=`<rect width="1200" height="760" fill="${document.documentElement.dataset.theme==='dark'?'#0d1522':'#fff'}"/><g font-family="system-ui" text-anchor="middle"><text x="600" y="330" font-size="30" font-weight="700" fill="${document.documentElement.dataset.theme==='dark'?'#f4f7fb':'#17202b'}">SLDDRW прочитан</text><text x="600" y="380" font-size="18" fill="#6e7781">Встроенное превью листа отсутствует.</text></g>`;}
+  finalizeDrawingRender();
+}
+function renderSlddrwAll(){
+  const ref=slddrwRef();if(!ref)return;
+  viewer.clear();setEmptyView('SLDDRW — 2D-чертёж',`${ref.sheetNames.length||ref.previewCount||0} лист · ${ref.views.length||0} видов · 3D-модель из SLDDRW в этой сборке не реконструируется.`);
+  $('#exportBtn').disabled=false;$('#entityCount').textContent=`${ref.streamCount} streams`;
+  ['sx','sy','sz','faceCount','edgeCount','cylinderCount','bsplineCount','patternCount','coaxialCount','brepVertexCount','brepEdgeCount','brepFaceCount','brepShellCount','brepClosedCount'].forEach(id=>{const el=$('#'+id);if(el)el.textContent='—'});
+  $('#solidCount').textContent='SLDDRW';$('#unitLabel').textContent='DRAWING';$('#unitFactor').textContent='—';const bq=$('#brepCoverage');if(bq)bq.textContent='—';$('#confidence').textContent='REF';$('#selectionInfo').textContent=`SLDDRW · ${ref.previewCount} preview`;
+  renderTree();renderFeatures();renderDimensions();renderAssembly();updateDrawingModeAvailability();renderCurrentDrawing();$('#exportDrawingBtn').disabled=!ref.previewCount;
+}
 function renderAll(){
+  if(isSlddrw()){renderSlddrwAll();return}
   const r=state.rec,d=state.dimensions||[],geo=r.geometryAvailable!==false;
   if(geo){viewer.setModel(r);$('#emptyView').style.display='none'}else{viewer.clear();setEmptyView('SLDASM сборка прочитана',`${r.nativeAssembly?.componentCount||0} позиций · BOM доступен во вкладке «Сборка». В этом файле не найдена декодируемая встроенная FaceTessellations-геометрия.`)}
   $('#exportBtn').disabled=false;
@@ -88,7 +123,7 @@ function renderAll(){
 }
 
 function drawingCacheKey(){
-  return [APP_VERSION,state.fileName||'untitled',state.fileSize||0,state.drawingMode,state.drawingMode==='partDetail'?(state.selectedComponentId||'part'):'sheet',document.documentElement.dataset.theme||'light'].join('|');
+  return [APP_VERSION,state.fileName||'untitled',state.fileSize||0,isSlddrw()?`slddrw:${state.slddrwSheetIndex||0}`:state.drawingMode,state.drawingMode==='partDetail'?(state.selectedComponentId||'part'):'sheet',document.documentElement.dataset.theme||'light'].join('|');
 }
 function finalizeCachedDrawing(cacheKey){
   const svg=$('#drawingSvg');
@@ -97,6 +132,7 @@ function finalizeCachedDrawing(cacheKey){
 }
 function renderCurrentDrawing(){
   if(!state.rec)return;
+  if(isSlddrw()){renderSlddrwDrawing();return}
   const r=state.rec,n=r.nativeAssembly,svg=$('#drawingSvg'),cacheKey=drawingCacheKey(),cached=drawingRenderCache.get(cacheKey);
   if(cached){
     svg.setAttribute('viewBox',cached.viewBox);svg.innerHTML=cached.html;finalizeDrawingRender();return;
@@ -161,6 +197,7 @@ function setDrawingTool(tool,{silent=false}={}){
   if(!silent&&drawingEditMode)log(`Правка: инструмент «${tool==='edit'?'Редактировать':tool==='zoom'?'Зум':'Панорама'}».`);
 }
 function setDrawingEditorEnabled(on){
+  if(isSlddrw()&&on){drawingEditMode=true;drawingNavigator.setEnabled(true);drawingNavigator.setTool('pan');syncDrawingEditUI();log('SLDDRW — эталон read-only: включена навигация (колесо зум к курсору, перетаскивание — панорама).');return}
   drawingEditMode=!!on;drawingNavigator.setEnabled(drawingEditMode);
   if(drawingEditMode)setDrawingTool(drawingTool||'edit',{silent:true});
   else{drawingEditor.setEnabled(false);syncDrawingEditUI();updateEditorSelection(null)}
@@ -169,6 +206,13 @@ function setDrawingEditorEnabled(on){
 
 function updateDrawingModeAvailability(){
   if(!state.rec)return;
+  const modeSwitch=document.querySelector('#drawingActions .mode-switch'),sheetSelect=$('#slddrwSheetSelect'),editBtn=$('#editDrawingBtn'),undo=$('#undoDrawingBtn'),redo=$('#redoDrawingBtn');
+  if(isSlddrw()){
+    modeSwitch?.classList.add('hidden');sheetSelect?.classList.remove('hidden');editBtn?.classList.add('hidden');undo?.classList.add('hidden');redo?.classList.add('hidden');$('#drawingToolPalette')?.classList.add('hidden');
+    const ref=slddrwRef();if(sheetSelect&&ref){sheetSelect.innerHTML=(ref.previews||ref.sheetNames||[]).map((x,i)=>{const name=typeof x==='string'?x:(x.name||`Лист ${i+1}`);return `<option value="${i}" ${i===(state.slddrwSheetIndex||0)?'selected':''}>${esc(name)}</option>`}).join('')||'<option value="0">Лист 1</option>';}
+    drawingNavigator.setEnabled(true);drawingNavigator.setTool('pan');return;
+  }
+  modeSwitch?.classList.remove('hidden');sheetSelect?.classList.add('hidden');editBtn?.classList.remove('hidden');undo?.classList.remove('hidden');redo?.classList.remove('hidden');
   const assemblyBtn=document.querySelector('[data-drawing-mode="assemblyDetailed"]');
   if(assemblyBtn){const available=!!state.rec.isAssembly;assemblyBtn.disabled=!available;assemblyBtn.title=available?'Сборочный производственный лист: виды, A–A/B–B, C/D, позиции, BOM и штамп':'Доступно после загрузки SLDASM сборки';if(!available&&state.drawingMode==='assemblyDetailed'){state.drawingMode='production';}}
   const partBtn=document.querySelector('[data-drawing-mode="partDetail"]');
@@ -177,6 +221,9 @@ function updateDrawingModeAvailability(){
 }
 
 function renderTree(){
+  if(isSlddrw()){
+    const ref=slddrwRef(),p=ref?.properties||{};const rows=[['Файл',state.fileName],['Формат','SLDDRW'],['Адаптер','Reference Reader v1.9.0'],['Контейнер',ref?.container||'—'],['SW format',ref?.version||'—'],['Streams',ref?.streamCount||0],['Листов',ref?.sheetNames?.length||ref?.previewCount||0],['Видов',ref?.views?.length||0],['Размеров в KeyWords',ref?.dimensions?.length||0],['Примечаний',ref?.notes?.length||0],['Формат листа',p['SW-Template Size']||'—'],['Масштаб листа',p['SW- Масштаб листа']||'—'],['Последнее сохранение',p['SW-Last Saved Date']||'—']];$('#treeBody').classList.remove('empty');$('#treeBody').innerHTML=rows.map(([a,b])=>`<div class="tree-row"><b>${esc(a)}</b><span>${esc(b)}</span></div>`).join('');return;
+  }
   const r=state.rec,n=r.nativeAssembly;
   const rows=[['Файл',state.fileName],['Формат','SLDASM'],['Адаптер','B-Rep Core v1.8.0'],['Контейнер',n.container],['Streams',n.streamCount||0],...(Number.isFinite(n.documentProperties?.mass)?[['Масса',`${n.documentProperties.mass.toFixed(2).replace('.',',')} кг`]]:[]),['Позиций',n.componentCount],['Вхождений',n.occurrenceCount],['Tess-блоков',n.faceBlocks||0],['Исходных треуг.',n.sourceTriangles||0],['Сценовых треуг.',n.triangles||0],...(r.counts.displayTriangles&&r.counts.displayTriangles!==r.counts.triangles?[['3D LOD',r.counts.displayTriangles],['Передача','Stack-safe']]:[]),...(r.brep?[['B-Rep V',r.brep.counts?.vertices||0],['B-Rep E',r.brep.counts?.edges||0],['B-Rep F',r.brep.counts?.faces||0],['B-Rep Shell',r.brep.counts?.shells||0],['Topology',`${Math.round((r.brep.coverage||0)*100)}% ${r.brep.topologyComplete?'FULL':'LOD'}`]]:[]),['Размещено',n.mappedOccurrences||0]];
   $('#treeBody').classList.remove('empty');
@@ -185,6 +232,9 @@ function renderTree(){
 
 
 function renderFeatures(){
+  if(isSlddrw()){
+    const ref=slddrwRef();$('#featureList').classList.remove('empty');$('#featureList').innerHTML=`<div class="feature"><i>▤</i><div>Modern SLDDRW chunk reader<small>${esc(ref.streamCount)} потоков · raw DEFLATE · полностью локально</small></div><strong>OK</strong></div><div class="feature"><i>▱</i><div>Листы и preview<small>${esc(ref.sheetNames.length)} имён · ${esc(ref.previewCount)} PNG-превью</small></div><strong>${ref.previewCount?'OK':'—'}</strong></div><div class="feature"><i>↔</i><div>Displayed dimensions index<small>${ref.dimensions.length?`${esc(ref.dimensions.length)} значений из swXmlContents/KeyWords`:'в этом файле Dimension values в KeyWords отсутствуют'}</small></div><strong>${ref.dimensions.length?'OK':'α'}</strong></div><div class="feature"><i>¶</i><div>Примечания / штамп<small>${esc(ref.notes.length)} текстовых элементов · ${esc(ref.properties?.['SW-File Title']||ref.projectName||'')}</small></div><strong>OK</strong></div><div class="feature"><i>◫</i><div>Виды / ссылки модели<small>${esc(ref.views.length)} видов · ${esc(ref.references.length)} ссылок</small></div><strong>OK</strong></div><div class="feature"><i>◎</i><div>Contents/Definition dimensions<small>следующий этап: бинарная CArchive-размерка для старых/detached файлов без Dimension index</small></div><strong>α</strong></div>`;return;
+  }
   const r=state.rec,n=r.nativeAssembly,geo=r.geometryAvailable!==false;
   $('#featureList').classList.remove('empty');
   const G=r.recognition;
@@ -230,6 +280,12 @@ function dimensionSymbol(x){
 }
 function dimensionSourceLabel(x){const verified=String(x?.source||'').startsWith('VERIFIED_');const prefix=verified?'проверено':'распознано';if(String(x?.source||'').startsWith('VERIFIED_FEATURE_'))return'Feature Graph · производственный элемент';if(String(x?.source||'').startsWith('VERIFIED_SUBASSEMBLY_'))return'подсборка · объединённая геометрия';return ['TESS_CYLINDER','VERIFIED_CYLINDER'].includes(x.source)?`${prefix}: цилиндр`:['TESS_CYLINDER_LENGTH','VERIFIED_CYLINDER_LENGTH'].includes(x.source)?`${prefix}: длина`:['TESS_HOLE_PATTERN','VERIFIED_HOLE_PATTERN'].includes(x.source)?(x.pcd?`${prefix}: группа отверстий · PCD Ø${fmt(x.pcd,2)}`:`${prefix}: повторяющиеся отверстия`):['TESS_PCD','VERIFIED_PCD'].includes(x.source)?`${prefix}: делительная окружность`:['TESS_PLANE_SPACING','VERIFIED_PLANE_SPACING'].includes(x.source)?`${prefix}: параллельные плоскости`:x.source==='COMPONENT_BOUNDS'?'локальный габарит выбранного компонента':'габарит TESS'}
 function renderDimensions(){
+  if(isSlddrw()){
+    const ref=slddrwRef(),d=ref?.dimensions||[];
+    if(d.length){$('#dimensionCards').classList.remove('empty');$('#dimensionCards').innerHTML=d.slice(0,18).map(x=>`<div class="dim-card"><span>${esc(x.name||'Размер')}</span><b>${esc(x.value)}</b><small>SLDDRW · отображаемое значение · 100%</small></div>`).join('');$('#dimensionsTable').innerHTML=d.map(x=>`<tr><td>SLDDRW</td><td>${esc(x.name||'Dimension')}</td><td>${esc(x.value)}</td><td>100% · KeyWords</td></tr>`).join('');}
+    else{$('#dimensionCards').classList.add('empty');$('#dimensionCards').textContent='Лист SLDDRW читается и показывается точно по встроенному preview. В этом конкретном detached-файле KeyWords не содержит структурированных значений <Dimension>; декодирование размерки из Contents/Definition — следующий этап.';$('#dimensionsTable').innerHTML='<tr><td colspan="4">SLDDRW прочитан. Структурированных Dimension values в KeyWords нет; программа ничего не выдумывает. Эталонная размерка видна на встроенном листе, бинарный CArchive decoder будет добавлен следующим шагом.</td></tr>';}
+    return;
+  }
   const r=state.rec,d=contextualDimensions();
   if(r.geometryAvailable!==false&&d.length){
     $('#dimensionCards').classList.remove('empty');
@@ -243,6 +299,14 @@ function renderDimensions(){
 
 
 function renderAssembly(){
+  if(isSlddrw()){
+    const ref=slddrwRef(),root=$('#assemblyBody'),sheets=ref.sheetNames||[],notes=ref.notes||[],views=ref.views||[],refs=ref.references||[];
+    const sheetRows=(ref.previews||[]).map((p,i)=>`<div><button data-slddrw-sheet="${i}" ${i===(state.slddrwSheetIndex||0)?'disabled':''}>▱ ${esc(p.name||sheets[i]||`Лист ${i+1}`)}</button><small>${esc(p.width)}×${esc(p.height)} px · exact embedded preview</small></div>`).join('')||'<div>Preview отсутствует</div>';
+    const noteRows=notes.slice(0,40).map(n=>`<div>${esc(n)}</div>`).join('')||'<div>Примечания не найдены</div>';
+    const viewRows=views.slice(0,40).map(v=>`<div><b>${esc(v.name||'View')}</b><small>${esc(v.description||'')}</small></div>`).join('')||'<div>Виды не найдены</div>';
+    const refRows=refs.slice(0,30).map(v=>`<div><b>${esc(v.description||v.name||'Reference')}</b><small>${esc(v.name||v.type||'')}</small></div>`).join('')||'<div>Ссылки не найдены</div>';
+    root.innerHTML=`<div class="assembly-head"><div><h3>${esc(ref.projectName||state.fileName)} · SLDDRW</h3><p class="hint">Reference Reader v1.9.0 · modern chunk container · полностью локально</p></div><span class="adapter-badge">SLDDRW</span></div><div class="reference-grid"><section><h4>Листы</h4><div class="reference-list">${sheetRows}</div><h4 style="margin-top:12px">Виды · ${views.length}</h4><div class="reference-list">${viewRows}</div></section><section><h4>Примечания / штамп · ${notes.length}</h4><div class="reference-list">${noteRows}</div><h4 style="margin-top:12px">Ссылки · ${refs.length}</h4><div class="reference-list">${refRows}</div></section></div>${ref.warnings?.length?`<div class="reference-warning"><b>Честное ограничение v1.9.0:</b> ${esc(ref.warnings[0])}</div>`:''}<div class="native-note"><b>Зачем это нужно:</b> SLDDRW теперь можно использовать как эталон Drawing Intelligence. Мы читаем настоящий сохранённый лист и метаданные SolidWorks, а не сравниваем только с PDF-картинкой.</div>`;return;
+  }
   const r=state.rec,root=$('#assemblyBody'),n=r.nativeAssembly,components=n.components||[],geo=r.geometryAvailable!==false;
   const treeRows=components.map(c=>{
     const id=c.instances?.[0]||'',bt=id?selectionTopology(id):null;
@@ -256,17 +320,18 @@ function renderAssembly(){
 }
 
 
-$('#assemblyBody').addEventListener('click',e=>{const comp=e.target.closest('[data-component-id]');if(comp){viewer.setSelectedComponent(comp.dataset.componentId);state.selectedComponentId=comp.dataset.componentId;state.selectedComponentName=comp.dataset.componentName||comp.querySelector('span')?.textContent?.replace(/^[◫▣]\s*/,'')||'компонент';updateDrawingModeAvailability();renderDimensions();switchTab('model');{const stats=selectionTopology(state.selectedComponentId);$('#selectionInfo').textContent=`${state.selectedComponentName}${stats?` · ${stats.faces}F · ${stats.shells} shell · ${stats.parts} дет.`:''}`;}log('Выбран компонент 3D: '+state.selectedComponentName+'.');return;}const part=e.target.closest('[data-open-part-drawing]');if(part){if(!state.selectedComponentId)return;state.drawingMode='partDetail';updateDrawingModeAvailability();switchTab('drawing');renderCurrentDrawing();log('Открыт чертёж выбранного компонента.');return;}const btn=e.target.closest('[data-open-assembly-drawing]');if(!btn)return;state.drawingMode='assemblyDetailed';updateDrawingModeAvailability();switchTab('drawing');renderCurrentDrawing();log('Открыт производственный сборочный чертёж.');});
+$('#assemblyBody').addEventListener('click',e=>{const refSheet=e.target.closest('[data-slddrw-sheet]');if(refSheet){state.slddrwSheetIndex=Number(refSheet.dataset.slddrwSheet)||0;const sel=$('#slddrwSheetSelect');if(sel)sel.value=String(state.slddrwSheetIndex);drawingRenderCache.clear();renderAssembly();switchTab('drawing');renderCurrentDrawing();scheduleDrawingFit();log(`SLDDRW: открыт лист ${state.slddrwSheetIndex+1}.`);return;}const comp=e.target.closest('[data-component-id]');if(comp){viewer.setSelectedComponent(comp.dataset.componentId);state.selectedComponentId=comp.dataset.componentId;state.selectedComponentName=comp.dataset.componentName||comp.querySelector('span')?.textContent?.replace(/^[◫▣]\s*/,'')||'компонент';updateDrawingModeAvailability();renderDimensions();switchTab('model');{const stats=selectionTopology(state.selectedComponentId);$('#selectionInfo').textContent=`${state.selectedComponentName}${stats?` · ${stats.faces}F · ${stats.shells} shell · ${stats.parts} дет.`:''}`;}log('Выбран компонент 3D: '+state.selectedComponentName+'.');return;}const part=e.target.closest('[data-open-part-drawing]');if(part){if(!state.selectedComponentId)return;state.drawingMode='partDetail';updateDrawingModeAvailability();switchTab('drawing');renderCurrentDrawing();log('Открыт чертёж выбранного компонента.');return;}const btn=e.target.closest('[data-open-assembly-drawing]');if(!btn)return;state.drawingMode='assemblyDetailed';updateDrawingModeAvailability();switchTab('drawing');renderCurrentDrawing();log('Открыт производственный сборочный чертёж.');});
 
 function fitDrawingSheet(){const ws=$('#drawingView'),svg=$('#drawingSvg');if(!ws||!svg)return;svg.classList.add('fit-sheet');drawingNavigator.fit();requestAnimationFrame(()=>{ws.scrollTop=0;ws.scrollLeft=Math.max(0,(ws.scrollWidth-ws.clientWidth)/2);});}
 function scheduleDrawingFit(){requestAnimationFrame(()=>fitDrawingSheet());}
-function switchTab(name){$$('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));$$('.view').forEach(v=>v.classList.remove('active-view'));$(`#${name}View`).classList.add('active-view');$('#viewTitle').textContent={model:'3D модель',drawing:'Инженерный авточертёж',dimensions:'Распознанные размеры',assembly:'Состав сборки'}[name];$('#modelActions').classList.toggle('hidden',name!=='model');$('#drawingActions').classList.toggle('hidden',name!=='drawing');if(name!=='drawing'&&drawingEditMode)setDrawingEditorEnabled(false);syncDrawingEditUI();if(name==='model')viewer.draw();if(name==='drawing'&&state.rec){renderCurrentDrawing();scheduleDrawingFit();syncDrawingEditUI()}}
+function switchTab(name){$$('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));$$('.view').forEach(v=>v.classList.remove('active-view'));$(`#${name}View`).classList.add('active-view');const titles=isSlddrw()?{model:'SLDDRW · 2D документ',drawing:'Эталонный лист SLDDRW',dimensions:'Размеры SLDDRW',assembly:'Данные SLDDRW'}:{model:'3D модель',drawing:'Инженерный авточертёж',dimensions:'Распознанные размеры',assembly:'Состав сборки'};$('#viewTitle').textContent=titles[name];$('#modelActions').classList.toggle('hidden',name!=='model'||isSlddrw());$('#drawingActions').classList.toggle('hidden',name!=='drawing');if(name!=='drawing'&&drawingEditMode&&!isSlddrw())setDrawingEditorEnabled(false);syncDrawingEditUI();if(name==='model')viewer.draw();if(name==='drawing'&&state.rec){renderCurrentDrawing();scheduleDrawingFit();syncDrawingEditUI()}}
 $$('.tab').forEach(b=>b.addEventListener('click',()=>switchTab(b.dataset.tab)));
 $$('[data-drawing-mode]').forEach(b=>b.addEventListener('click',()=>{state.drawingMode=b.dataset.drawingMode;$$('[data-drawing-mode]').forEach(x=>x.classList.toggle('active',x===b));if(state.rec){renderDimensions();renderCurrentDrawing();scheduleDrawingFit()}log(`Режим чертежа: ${b.textContent}.`)}));
 $('#themeToggle').addEventListener('click',()=>applyTheme(document.documentElement.dataset.theme==='dark'?'light':'dark'));
 function setViewerMode(mode){viewer.setMode(mode);[['solidBtn','solid'],['brepBtn','brep'],['wireBtn','wire']].forEach(([id,m])=>$('#'+id)?.classList.toggle('active',m===mode));if(mode==='brep'&&state.rec?.brep)log(`B-Rep view: ${state.rec.brep.counts?.vertices||0} V · ${state.rec.brep.counts?.edges||0} E · ${state.rec.brep.counts?.faces||0} F · ${state.rec.brep.counts?.shells||0} shell.`)}
 $('#fitBtn').addEventListener('click',()=>viewer.fit());$('#solidBtn').addEventListener('click',()=>setViewerMode('solid'));$('#brepBtn')?.addEventListener('click',()=>setViewerMode('brep'));$('#wireBtn').addEventListener('click',()=>setViewerMode('wire'));$('#clearLog').addEventListener('click',()=>$('#logBody').innerHTML='');const fitDrawingBtn=$('#fitDrawingBtn');if(fitDrawingBtn)fitDrawingBtn.addEventListener('click',fitDrawingSheet);
 $('#fileInput').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;await importFile(f);e.target.value=''})
+$('#slddrwSheetSelect')?.addEventListener('change',e=>{state.slddrwSheetIndex=Number(e.target.value)||0;drawingRenderCache.clear();renderCurrentDrawing();renderAssembly();scheduleDrawingFit();log(`SLDDRW: открыт лист ${state.slddrwSheetIndex+1}.`);});
 const drop=$('#dropZone');['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('drag')}));['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('drag')}));drop.addEventListener('drop',async e=>{const f=e.dataTransfer.files[0];if(f)await importFile(f)});
 
 const editDrawingBtn=$('#editDrawingBtn');if(editDrawingBtn)editDrawingBtn.addEventListener('click',()=>setDrawingEditorEnabled(!drawingEditMode));
@@ -281,7 +346,7 @@ $('#addEditorRoughness')?.addEventListener('click',()=>drawingEditor.addRoughnes
 $('#addEditorWeld')?.addEventListener('click',()=>drawingEditor.addWeld('Сварной шов'));
 $('#resetDrawingEdits')?.addEventListener('click',()=>{if(confirm('Сбросить все ручные правки текущего чертежа?'))drawingEditor.resetAll()});
 
-$('#exportBtn').addEventListener('click',()=>{if(!state.rec)return;const report={version:APP_VERSION,generated:new Date().toISOString(),file:state.fileName,drawingMode:state.drawingMode,counts:state.rec.counts,bounds:state.rec.bounds,dimensions:state.dimensions,boltPatterns:state.rec.boltPatterns,products:state.rec.products,occurrences:state.rec.occurrences,nativeAssembly:state.rec.nativeAssembly||null,brep:state.rec.brep||null,recognition:state.rec.recognition||null};const blob=new Blob([JSON.stringify(report,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(state.fileName||'model').replace(/\.[^.]+$/,'')+'-engineering-report.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)});
+$('#exportBtn').addEventListener('click',()=>{if(!state.rec)return;const ref=isSlddrw()?slddrwRef():null;const report=ref?{version:APP_VERSION,generated:new Date().toISOString(),file:state.fileName,format:'SLDDRW',projectName:ref.projectName,container:ref.container,solidworksFormat:ref.version,streamCount:ref.streamCount,sheetNames:ref.sheetNames,sheets:ref.sheets,dimensions:ref.dimensions,notes:ref.notes,views:ref.views,references:ref.references,properties:ref.properties,warnings:ref.warnings}:{version:APP_VERSION,generated:new Date().toISOString(),file:state.fileName,drawingMode:state.drawingMode,counts:state.rec.counts,bounds:state.rec.bounds,dimensions:state.dimensions,boltPatterns:state.rec.boltPatterns,products:state.rec.products,occurrences:state.rec.occurrences,nativeAssembly:state.rec.nativeAssembly||null,brep:state.rec.brep||null,recognition:state.rec.recognition||null};const blob=new Blob([JSON.stringify(report,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(state.fileName||'model').replace(/\.[^.]+$/,'')+'-engineering-report.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)});
 $('#exportDrawingBtn').addEventListener('click',()=>{if(!state.rec)return;renderCurrentDrawing();const svg=serializeDrawing($('#drawingSvg'));const blob=new Blob([svg],{type:'image/svg+xml;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(state.fileName||'model').replace(/\.[^.]+$/,'')+'-drawing-'+state.drawingMode+'.svg';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);log('Чертёж экспортирован в SVG локально.');});
 function esc(x){return String(x??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 initTheme();

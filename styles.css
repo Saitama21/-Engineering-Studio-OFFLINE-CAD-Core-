@@ -194,3 +194,11 @@ html[data-theme="dark"] .drawing-workspace{background:linear-gradient(145deg,#10
 .brep-feature{background:color-mix(in srgb,var(--accent) 7%,var(--panel))!important}.brep-feature strong{color:var(--green)!important}
 #brepBtn.active{border-color:color-mix(in srgb,var(--accent) 45%,var(--line));background:color-mix(in srgb,var(--accent) 13%,var(--panel));color:var(--accent);font-weight:700}
 .bom-hint{padding:8px 2px 0;margin:0}.bom-component{border-radius:7px}.bom-component:hover{background:color-mix(in srgb,var(--accent) 8%,var(--panel))}
+
+/* v1.9.0 · SLDDRW Reference Reader */
+.slddrw-sheet-select{min-height:32px;max-width:180px;padding:5px 28px 5px 9px;border:1px solid var(--line);border-radius:9px;background:var(--panel-2);color:var(--text-strong);font:600 11px system-ui,-apple-system,sans-serif}
+.slddrw-reference-sheet{shape-rendering:auto}.slddrw-reference-bg{fill:#fff}
+.reference-grid{display:grid;grid-template-columns:minmax(240px,.8fr) minmax(300px,1.2fr);gap:14px;margin-top:14px}.reference-grid section{border:1px solid var(--line);border-radius:12px;padding:12px;background:var(--panel-2)}.reference-grid h4{margin:0 0 10px;color:var(--text-strong)}
+.reference-list{display:grid;gap:6px;max-height:320px;overflow:auto}.reference-list>div{padding:8px 9px;border:1px solid var(--line);border-radius:9px;background:var(--panel);color:var(--text-strong);font-size:11px;overflow-wrap:anywhere}.reference-list small{display:block;color:var(--muted);margin-top:3px}
+.reference-warning{margin-top:12px;padding:10px 12px;border:1px solid color-mix(in srgb,#d18b00 35%,var(--line));border-radius:10px;background:color-mix(in srgb,#d18b00 8%,var(--panel));color:var(--muted);line-height:1.45}
+@media(max-width:760px){.reference-grid{grid-template-columns:1fr}.slddrw-sheet-select{max-width:100%;flex:1 1 160px}}

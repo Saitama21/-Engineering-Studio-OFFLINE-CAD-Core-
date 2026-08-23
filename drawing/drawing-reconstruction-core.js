@@ -1,4 +1,4 @@
-// ROZFOOD Engineering Studio v2.4.0 — CAD Edge Graph / Drawing Reconstruction Core
+// ROZFOOD Engineering Studio v2.5.0 — CAD Edge Graph / Drawing Reconstruction Core
 // Faceted source in, engineering linework out. No AI / no server dependency.
 
 const dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];

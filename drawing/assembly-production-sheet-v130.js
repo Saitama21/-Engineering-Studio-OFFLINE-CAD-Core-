@@ -3,7 +3,7 @@ import {componentLocalRecord,componentDrawableIds} from '../core/component-local
 import {buildFeatureGraph} from '../core/feature-graph.js';
 import {recognizeManufacturingFeatures} from '../core/manufacturing-recognition.js';
 import {engineeringLinework,buildOcclusionField,visibleEdgeSegments,reconstructionStats} from './drawing-reconstruction-core.js';
-import {analyticViewCurves,edgeIsAnalyticSurface,reconstructAnalyticGeometry} from '../core/analytic-geometry.js';
+import {analyticViewCurves,analyticSectionCurves,edgeIsAnalyticSurface,reconstructAnalyticGeometry} from '../core/analytic-geometry.js';
 const esc=x=>String(x??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[m]));
 const fmt=(v,d=0)=>Number.isFinite(v)?Number(v).toFixed(d).replace(/\.0+$/,''): '—';
 const dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
@@ -36,15 +36,15 @@ function renderMesh(rec,s,box,{stroke='#111',width=.72,detail=false,fixedScale=n
   const analytic=analyticBundle.analytic;
   const edges=engineeringLinework(rec,s.dir,{featureCos:detail?.994:.988,tangentCos:.99975});
   const vb=hiddenRemoval?buildOcclusionField(rec,s,{targetPixels:detail?720000:520000}):null;
-  let meshD='',analyticD='',visibleSegments=0,analyticSegments=0,suppressedAnalyticMesh=0;
+  let contourD='',featureD='',analyticD='',visibleSegments=0,analyticSegments=0,suppressedAnalyticMesh=0;
   for(const e of edges){
     // Cylindrical tessellation is replaced by reconstructed analytic curves. Keep seams/features
     // between unlike surfaces, but never draw mesh chords living solely on an analytic cylinder.
     if(edgeIsAnalyticSurface(e,analytic)){suppressedAnalyticMesh++;continue}
-    const samples=detail?41:33;
+    const samples=detail?41:33,target=(e.kind==='SILHOUETTE'||e.kind==='BOUNDARY')?'contour':'feature';
     for(const seg of visibleEdgeSegments(e,s,vb,{samples,refine:6})){
       const a=M.P(seg[0]),b=M.P(seg[1]);if(Math.hypot(a[0]-b[0],a[1]-b[1])<.42)continue;
-      meshD+=`M${a[0].toFixed(2)} ${a[1].toFixed(2)}L${b[0].toFixed(2)} ${b[1].toFixed(2)}`;visibleSegments++;
+      const cmd=`M${a[0].toFixed(2)} ${a[1].toFixed(2)}L${b[0].toFixed(2)} ${b[1].toFixed(2)}`;if(target==='contour')contourD+=cmd;else featureD+=cmd;visibleSegments++;
     }
   }
   for(const curve of analyticBundle.curves){
@@ -58,8 +58,8 @@ function renderMesh(rec,s,box,{stroke='#111',width=.72,detail=false,fixedScale=n
     }
   }
   const stats=reconstructionStats(rec,s.dir);
-  const meshWidth=Math.max(.42,width*.72),analyticWidth=Math.max(.52,width*.92);
-  return{svg:`<g data-reconstruction="v2.4" data-analytic-cylinders="${analytic.counts.cylinders}" data-cad-boundaries="${analytic.counts.cadBoundaries||0}" data-suppressed-analytic-mesh="${suppressedAnalyticMesh}"><path d="${meshD}" fill="none" stroke="${stroke}" stroke-width="${meshWidth}" stroke-linecap="round" stroke-linejoin="round"/><path d="${analyticD}" fill="none" stroke="${stroke}" stroke-width="${analyticWidth}" stroke-linecap="round" stroke-linejoin="round"/></g>`,map:M,hiddenRemoval:!!vb,reconstruction:{...stats,analyticCylinders:analytic.counts.cylinders,cadBoundaries:analytic.counts.cadBoundaries||0,suppressedAnalyticMesh,analyticSegments,visibleSegments}};
+  const contourWidth=Math.max(.54,width*.9),featureWidth=Math.max(.34,width*.56),analyticWidth=Math.max(.48,width*.78);
+  return{svg:`<g data-reconstruction="v2.5" data-analytic-cylinders="${analytic.counts.cylinders}" data-cad-boundaries="${analytic.counts.cadBoundaries||0}" data-suppressed-analytic-mesh="${suppressedAnalyticMesh}"><path d="${featureD}" fill="none" stroke="${stroke}" stroke-width="${featureWidth}" stroke-linecap="round" stroke-linejoin="round"/><path d="${analyticD}" fill="none" stroke="${stroke}" stroke-width="${analyticWidth}" stroke-linecap="round" stroke-linejoin="round"/><path d="${contourD}" fill="none" stroke="${stroke}" stroke-width="${contourWidth}" stroke-linecap="round" stroke-linejoin="round"/></g>`,map:M,hiddenRemoval:!!vb,reconstruction:{...stats,analyticCylinders:analytic.counts.cylinders,cadBoundaries:analytic.counts.cadBoundaries||0,suppressedAnalyticMesh,analyticSegments,visibleSegments}};
 }
 function dimH(x1,x2,y,y0,label){return`<g stroke="#111" fill="#111" stroke-width=".8" font-family="Arial,sans-serif" font-size="10"><line x1="${x1}" y1="${y0}" x2="${x1}" y2="${y+4}"/><line x1="${x2}" y1="${y0}" x2="${x2}" y2="${y+4}"/><line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}"/><path d="M${x1} ${y}l6 -2.4v4.8zM${x2} ${y}l-6 -2.4v4.8z"/><text x="${(x1+x2)/2}" y="${y-4}" text-anchor="middle" stroke="none">${esc(label)}</text></g>`}
 function dimV(x,y1,y2,x0,label){return`<g stroke="#111" fill="#111" stroke-width=".8" font-family="Arial,sans-serif" font-size="10"><line x1="${x0}" y1="${y1}" x2="${x-4}" y2="${y1}"/><line x1="${x0}" y1="${y2}" x2="${x-4}" y2="${y2}"/><line x1="${x}" y1="${y1}" x2="${x}" y2="${y2}"/><path d="M${x} ${y1}l-2.4 6h4.8zM${x} ${y2}l-2.4 -6h4.8z"/><text x="${x-5}" y="${(y1+y2)/2}" text-anchor="middle" dominant-baseline="middle" transform="rotate(-90 ${x-5} ${(y1+y2)/2})" stroke="none">${esc(label)}</text></g>`}
@@ -127,24 +127,45 @@ function triPlaneSegment(loop,planePoint,planeNormal,eps=.08){
     if(Math.abs(da)<=eps)pts.push(a);if(da*db<0){const t=da/(da-db);pts.push(add(a,mul(sub(b,a),t)))}}
   const out=[];for(const q of pts)if(!out.some(x=>len(sub(x,q))<eps*2))out.push(q);return out.length>=2?[out[0],out[1]]:null;
 }
-function renderSection(rec,s,box,planePoint,planeNormal,{stroke='#111',width=.8,hatch=true}={}){
-  const M=mapView(rec.bounds,s,box,6),segments=[];
-  const analytic=reconstructAnalyticGeometry(rec),recognized=analytic.recognizedFaceKeys;
-  const fk=f=>[f.componentId||'RAW',f.modelId||'',f.sourceStream||'',f.tessFaceId??''].join('|');
-  // Mesh intersection is retained for unrecognized/freeform faces only.
-  for(const f of rec.faces||[]){if(recognized.has(fk(f)))continue;const seg=triPlaneSegment(f.loops?.[0],planePoint,planeNormal);if(seg)segments.push(seg)}
-  // Exact analytic section of recognized cylinders for the common axial-section case.
-  const n=norm(planeNormal);
-  for(const c of analytic.cylinders){
-    const a=norm(c.axis),ad=Math.abs(dot(a,n));if(ad>.12)continue;
-    const dist=dot(sub(c.axisPoint,planePoint),n);if(Math.abs(dist)>=c.radius-.01)continue;
-    const m=norm(cross(a,n)),off=Math.sqrt(Math.max(0,c.radius*c.radius-dist*dist)),base=mul(n,-dist),[e0,e1]=(()=>{const h=c.length/2;return[add(c.axisPoint,mul(a,-h)),add(c.axisPoint,mul(a,h))]})();
-    for(const sg of [1,-1]){const r=add(base,mul(m,sg*off));segments.push([add(e0,r),add(e1,r)])}
+function sectionSegKey(a,b,component,q){const A=qpt(a,q),B=qpt(b,q);return(A<B?A+'|'+B:B+'|'+A)+'|'+(component||'RAW')}
+function chainSectionSegments(items,q){
+  const byComp=new Map();for(const item of items){const comp=item.componentId||'RAW';let a=byComp.get(comp);if(!a)byComp.set(comp,a=[]);a.push(item)}
+  const chains=[];
+  for(const [componentId,segs] of byComp){
+    const byVertex=new Map(),addV=(k,i)=>{let a=byVertex.get(k);if(!a)byVertex.set(k,a=[]);a.push(i)};
+    segs.forEach((e,i)=>{addV(qpt(e.a,q),i);addV(qpt(e.b,q),i)});const used=new Uint8Array(segs.length);
+    const endpoint=(e,k)=>qpt(e.a,q)===k?e.b:e.a;
+    const starts=[];for(let i=0;i<segs.length;i++){const e=segs[i],da=(byVertex.get(qpt(e.a,q))||[]).length,db=(byVertex.get(qpt(e.b,q))||[]).length;if(da===1||db===1)starts.push(i)}
+    for(const i of [...starts,...segs.map((_,i)=>i)]){
+      if(used[i])continue;used[i]=1;const e0=segs[i];let ka=qpt(e0.a,q),kb=qpt(e0.b,q);if((byVertex.get(ka)||[]).length===1){/* keep */}else if((byVertex.get(kb)||[]).length===1){[ka,kb]=[kb,ka]}
+      const first=ka===qpt(e0.a,q)?e0.a:e0.b,second=ka===qpt(e0.a,q)?e0.b:e0.a,pts=[first,second];let key=qpt(second,q),guard=0;
+      while(guard++<segs.length+4){const cand=(byVertex.get(key)||[]).find(j=>!used[j]);if(cand===undefined)break;used[cand]=1;const e=segs[cand],next=endpoint(e,key);pts.push(next);key=qpt(next,q);if(key===qpt(pts[0],q))break}
+      const closed=pts.length>2&&len(sub(pts[0],pts.at(-1)))<q*2.2;chains.push({componentId,points:pts,closed});
+    }
   }
-  let d='';for(const seg of segments){const a=M.P(seg[0]),b=M.P(seg[1]);if(Math.hypot(a[0]-b[0],a[1]-b[1])>.3)d+=`M${a[0].toFixed(2)} ${a[1].toFixed(2)}L${b[0].toFixed(2)} ${b[1].toFixed(2)}`}
-  let svg=`<path d="${d}" fill="none" stroke="${stroke}" stroke-width="${Math.max(.55,width*.82)}"/>`;
-  if(hatch&&segments.length){svg+=`<g stroke="#777" stroke-width=".34" opacity=".5">${segments.filter((_,i)=>i%24===0).map(seg=>{const a=M.P(seg[0]),b=M.P(seg[1]),mx=(a[0]+b[0])/2,my=(a[1]+b[1])/2;return`<line x1="${mx-4}" y1="${my+4}" x2="${mx+4}" y2="${my-4}"/>`}).join('')}</g>`}
-  return{svg,map:M,count:segments.length,analytic:true};
+  return chains;
+}
+function hatchClosedLoops(loops,step=8){
+  if(!loops.length)return'';let minC=Infinity,maxC=-Infinity;for(const loop of loops)for(const [x,y] of loop){const c=x+y;minC=Math.min(minC,c);maxC=Math.max(maxC,c)}
+  let out='';const begin=Math.floor(minC/step)*step;
+  for(let c=begin;c<=maxC+step;c+=step){const hits=[];for(const loop of loops){for(let i=0;i<loop.length-1;i++){const a=loop[i],b=loop[i+1],ca=a[0]+a[1],cb=b[0]+b[1];if(Math.abs(cb-ca)<1e-9)continue;const t=(c-ca)/(cb-ca);if(t>=0&&t<1)hits.push([a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t])}}
+    hits.sort((a,b)=>a[0]-b[0]);for(let i=0;i+1<hits.length;i+=2){const a=hits[i],b=hits[i+1];if(Math.hypot(a[0]-b[0],a[1]-b[1])>.8)out+=`M${a[0].toFixed(2)} ${a[1].toFixed(2)}L${b[0].toFixed(2)} ${b[1].toFixed(2)}`}
+  }
+  return out;
+}
+function renderSection(rec,s,box,planePoint,planeNormal,{stroke='#111',width=.8,hatch=true}={}){
+  const M=mapView(rec.bounds,s,box,6),analytic=reconstructAnalyticGeometry(rec),cylinderFaceKeys=new Set(analytic.cylinders.map(c=>c.faceKey).filter(Boolean)),raw=[],diag=Math.hypot(...(rec.bounds?.size||[1,1,1])),q=clamp(diag*1e-5,.003,.03),seen=new Set();
+  const fk=f=>[f.componentId||'RAW',f.modelId||'',f.sourceStream||'',f.tessFaceId??''].join('|');
+  // A section plane must intersect planar faces too. v2.5 skipped every recognized plane,
+  // which erased most plates/webs from A-A/B-B. Only cylinder tessellation is replaced analytically.
+  for(const f of rec.faces||[]){if(cylinderFaceKeys.has(fk(f)))continue;const seg=triPlaneSegment(f.loops?.[0],planePoint,planeNormal,Math.max(.012,q*1.4));if(!seg)continue;const k=sectionSegKey(seg[0],seg[1],f.componentId,q);if(seen.has(k))continue;seen.add(k);raw.push({a:seg[0],b:seg[1],componentId:f.componentId||'RAW'})}
+  const chains=chainSectionSegments(raw,q),analyticCut=analyticSectionCurves(rec,planePoint,planeNormal,{circleSegments:144,minConfidence:.78});
+  let boundaryD='',analyticD='';const closed2=[];
+  for(const chain of chains){const pts=chain.points||[];if(pts.length<2)continue;const mapped=pts.map(M.P);if(chain.closed){if(Math.hypot(mapped[0][0]-mapped.at(-1)[0],mapped[0][1]-mapped.at(-1)[1])>.2)mapped.push(mapped[0]);closed2.push(mapped)}boundaryD+=`M${mapped[0][0].toFixed(2)} ${mapped[0][1].toFixed(2)}`;for(let i=1;i<mapped.length;i++)boundaryD+=`L${mapped[i][0].toFixed(2)} ${mapped[i][1].toFixed(2)}`}
+  for(const curve of analyticCut.curves){const pts=curve.points||[];if(pts.length<2)continue;const mapped=pts.map(M.P);analyticD+=`M${mapped[0][0].toFixed(2)} ${mapped[0][1].toFixed(2)}`;for(let i=1;i<mapped.length;i++)analyticD+=`L${mapped[i][0].toFixed(2)} ${mapped[i][1].toFixed(2)}`}
+  const hatchD=hatch?hatchClosedLoops(closed2,8):'';
+  const svg=`<g data-section-core="v2.5" data-section-chains="${chains.length}" data-section-closed="${closed2.length}" data-analytic-section-curves="${analyticCut.curves.length}">${hatchD?`<path d="${hatchD}" fill="none" stroke="#777" stroke-width=".34" opacity=".58"/>`:''}<path d="${boundaryD}" fill="none" stroke="${stroke}" stroke-width="${Math.max(.55,width*.82)}" stroke-linecap="round" stroke-linejoin="round"/><path d="${analyticD}" fill="none" stroke="${stroke}" stroke-width="${Math.max(.58,width*.88)}" stroke-linecap="round" stroke-linejoin="round"/></g>`;
+  return{svg,map:M,count:chains.length,closed:closed2.length,analyticCurves:analyticCut.curves.length,analytic:true};
 }
 function faceCentroid(f){const p=f.loops?.[0]||[];if(!p.length)return[0,0,0];let s=[0,0,0];for(const q of p)s=add(s,q);return mul(s,1/p.length)}
 function subRecord(rec,faces){return{...rec,faces,bounds:(()=>{const pts=[];for(const f of faces)for(const p of f.loops?.[0]||[])pts.push(p);if(!pts.length)return rec.bounds;const mn=[Infinity,Infinity,Infinity],mx=[-Infinity,-Infinity,-Infinity];for(const p of pts)for(let i=0;i<3;i++){mn[i]=Math.min(mn[i],p[i]);mx[i]=Math.max(mx[i],p[i])}return{min:mn,max:mx,size:sub(mx,mn),center:mul(add(mn,mx),.5)}})()};}
@@ -250,10 +271,10 @@ function renderDrumReferenceSheet(svg,rec,plan,{projectName,fileName,theme,mode=
   if(cfg.bom)s+=renderProductionBOM(rec,bomBox,subfeatures.cross?.occurrence.id||null);
   if(mode==='control')s+=`<g data-control-table="critical-dimensions" font-family="Arial" fill="#111" stroke="#111" stroke-width=".65"><rect x="1280" y="775" width="354" height="150" fill="#fff"/><text x="1292" y="797" stroke="none" font-size="11" font-weight="700">Контрольные размеры</text><text x="1292" y="822" stroke="none" font-size="9">Общая длина</text><text x="1618" y="822" text-anchor="end" stroke="none" font-size="9">${fmt(L,0)}</text><text x="1292" y="844" stroke="none" font-size="9">Наружный диаметр</text><text x="1618" y="844" text-anchor="end" stroke="none" font-size="9">Ø ${fmt(plan.outerDiameter,0)}</text><text x="1292" y="866" stroke="none" font-size="9">Посадочный диаметр</text><text x="1618" y="866" text-anchor="end" stroke="none" font-size="9">Ø ${fmt(plan.midBore,0)}</text><text x="1292" y="888" stroke="none" font-size="9">Внутренний диаметр</text><text x="1618" y="888" text-anchor="end" stroke="none" font-size="9">Ø ${fmt(plan.innerBore,0)}</text></g>`;
   s+=renderReferenceA2Stamp(projectName,scale,rec.documentProperties?.mass,stampBox);
-  s+=`<text x="102" y="1152" font-family="Arial" font-size="7.5" fill="#555">ROZFOOD ENGINEERING STUDIO · Drawing Intelligence v2.4.0 · ASSEMBLY VIEW/DIMENSION PLANNER · ${cfg.label} · ${esc(fileName)}</text><text x="1628" y="1152" text-anchor="end" font-family="Arial" font-size="7.5">Формат А2</text></g>`;
+  s+=`<text x="102" y="1152" font-family="Arial" font-size="7.5" fill="#555">ROZFOOD ENGINEERING STUDIO · Drawing Intelligence v2.5.0 · ASSEMBLY VIEW/DIMENSION PLANNER · ${cfg.label} · ${esc(fileName)}</text><text x="1628" y="1152" text-anchor="end" font-family="Arial" font-size="7.5">Формат А2</text></g>`;
   svg.innerHTML=s;
 }
-function renderReferenceStamp(projectName,scale,box,subtitle='Сборочный чертёж'){const x=box.x,y=box.y,w=box.w,h=box.h;return`<g stroke="#111" fill="none" stroke-width=".7" font-family="Arial,sans-serif"><rect x="${x}" y="${y}" width="${w}" height="${h}"/><line x1="${x+165}" y1="${y}" x2="${x+165}" y2="${y+h}"/><line x1="${x+310}" y1="${y}" x2="${x+310}" y2="${y+h}"/><line x1="${x}" y1="${y+26}" x2="${x+w}" y2="${y+26}"/><line x1="${x}" y1="${y+54}" x2="${x+w}" y2="${y+54}"/><line x1="${x+310}" y1="${y+42}" x2="${x+w}" y2="${y+42}"/><text x="${x+8}" y="${y+12}" fill="#111" stroke="none" font-size="6.7">Изм.  Лист  № докум.  Подп.  Дата</text><text x="${x+8}" y="${y+24}" fill="#111" stroke="none" font-size="6.7">Разраб.  ROZFOOD</text><text x="${x+176}" y="${y+19}" fill="#111" stroke="none" font-size="12" font-weight="700">${esc(projectName)} СБ</text><text x="${x+176}" y="${y+47}" fill="#111" stroke="none" font-size="8.5">${esc(subtitle)}</text><text x="${x+320}" y="${y+12}" fill="#111" stroke="none" font-size="6.7">Лит.   Масса   Масштаб</text><text x="${x+w-16}" y="${y+38}" text-anchor="end" fill="#111" stroke="none" font-size="12" font-weight="700">${scale}</text><text x="${x+320}" y="${y+51}" fill="#111" stroke="none" font-size="6.7">Лист 1   Листов 1</text><text x="${x+176}" y="${y+69}" fill="#111" stroke="none" font-size="7.3">ROZFOOD ENGINEERING STUDIO · ANALYTIC RECONSTRUCTION CORE v2.4</text></g>`}
+function renderReferenceStamp(projectName,scale,box,subtitle='Сборочный чертёж'){const x=box.x,y=box.y,w=box.w,h=box.h;return`<g stroke="#111" fill="none" stroke-width=".7" font-family="Arial,sans-serif"><rect x="${x}" y="${y}" width="${w}" height="${h}"/><line x1="${x+165}" y1="${y}" x2="${x+165}" y2="${y+h}"/><line x1="${x+310}" y1="${y}" x2="${x+310}" y2="${y+h}"/><line x1="${x}" y1="${y+26}" x2="${x+w}" y2="${y+26}"/><line x1="${x}" y1="${y+54}" x2="${x+w}" y2="${y+54}"/><line x1="${x+310}" y1="${y+42}" x2="${x+w}" y2="${y+42}"/><text x="${x+8}" y="${y+12}" fill="#111" stroke="none" font-size="6.7">Изм.  Лист  № докум.  Подп.  Дата</text><text x="${x+8}" y="${y+24}" fill="#111" stroke="none" font-size="6.7">Разраб.  ROZFOOD</text><text x="${x+176}" y="${y+19}" fill="#111" stroke="none" font-size="12" font-weight="700">${esc(projectName)} СБ</text><text x="${x+176}" y="${y+47}" fill="#111" stroke="none" font-size="8.5">${esc(subtitle)}</text><text x="${x+320}" y="${y+12}" fill="#111" stroke="none" font-size="6.7">Лит.   Масса   Масштаб</text><text x="${x+w-16}" y="${y+38}" text-anchor="end" fill="#111" stroke="none" font-size="12" font-weight="700">${scale}</text><text x="${x+320}" y="${y+51}" fill="#111" stroke="none" font-size="6.7">Лист 1   Листов 1</text><text x="${x+176}" y="${y+69}" fill="#111" stroke="none" font-size="7.3">ROZFOOD ENGINEERING STUDIO · ANALYTIC SECTION & CURVE CORE v2.5</text></g>`}
 
 function boundsPrincipalAxis(rec){const sz=rec?.bounds?.size||[1,1,1];let i=0;if(sz[1]>sz[i])i=1;if(sz[2]>sz[i])i=2;const a=[0,0,0];a[i]=1;return a}
 export function assemblyDrawingProfile(rec){
@@ -320,7 +341,7 @@ function renderGeneralAssemblySheet(svg,rec,{projectName='SLDASM',fileName='',th
   if(cfg.section)s+=`<g stroke="#111" fill="#111" font-family="Arial" font-size="10"><line x1="${main.x+12}" y1="${c1[1]}" x2="${main.x+main.w-12}" y2="${c1[1]}" stroke-dasharray="12 4 2 4"/><path d="M${main.x+18} ${c1[1]}l10 -5v10zM${main.x+main.w-18} ${c1[1]}l-10 -5v10z"/><text x="${main.x+4}" y="${c1[1]-8}" stroke="none">A</text><text x="${main.x+main.w-6}" y="${c1[1]-8}" stroke="none">A</text></g>`;
   if(cfg.bom)s+=renderBOM(rec.nativeAssembly,bomBox);
   s+=renderReferenceStamp(projectName,scale,stampBox,mode==='assemblyDetailed'?'Сборочный чертёж':`${cfg.label[0]+cfg.label.slice(1).toLowerCase()} чертёж`);
-  s+=`<g font-family="Arial" fill="#111"><text x="${large?105:95}" y="${H-42}" font-size="7" fill="#555">ROZFOOD ENGINEERING STUDIO · Drawing Intelligence v2.4.0 · GENERAL · ${cfg.label} · ${large?'A1':'A2'} · ${esc(fileName)}</text><text x="${W-145}" y="${bomBox.y-12}" font-size="9" text-anchor="end">VERIFIED TESS</text></g>`;
+  s+=`<g font-family="Arial" fill="#111"><text x="${large?105:95}" y="${H-42}" font-size="7" fill="#555">ROZFOOD ENGINEERING STUDIO · Drawing Intelligence v2.5.0 · GENERAL · ${cfg.label} · ${large?'A1':'A2'} · ${esc(fileName)}</text><text x="${W-145}" y="${bomBox.y-12}" font-size="9" text-anchor="end">VERIFIED TESS</text></g>`;
   svg.innerHTML=s;
 }
 
@@ -367,14 +388,14 @@ export function renderAssemblyProductionSheet(svg,rec,{projectName='SLDASM',file
   s+=`<text x="${isoSolid.x+8}" y="${isoSolid.y+isoSolid.h+10}" font-family="Arial" font-size="9" fill="#111">Сборочный изометрический вид</text><text x="${isoExpl.x+8}" y="${isoExpl.y+isoExpl.h+10}" font-family="Arial" font-size="9" fill="#111">B–B (1:5)</text>`;
   s+=renderBOM(rec.nativeAssembly,{x:1030,y:625,w:325,h:205});
   s+=renderReferenceStamp(projectName,scale,{x:860,y:845,w:495,h:95});
-  s+=`<g font-family="Arial" fill="#111"><text x="95" y="944" font-size="7" fill="#555">ROZFOOD ENGINEERING STUDIO · Drawing Intelligence v2.4.0 · ${esc(fileName)}</text><text x="1240" y="612" font-size="9" text-anchor="end">VERIFIED TESS</text></g>`;
+  s+=`<g font-family="Arial" fill="#111"><text x="95" y="944" font-size="7" fill="#555">ROZFOOD ENGINEERING STUDIO · Drawing Intelligence v2.5.0 · ${esc(fileName)}</text><text x="1240" y="612" font-size="9" text-anchor="end">VERIFIED TESS</text></g>`;
   svg.innerHTML=s;
 }
 
 
 function renderPartStamp(projectName,scale,box){
   const x=box.x,y=box.y,w=box.w,h=box.h;
-  return `<g stroke="#111" fill="none" stroke-width=".7" font-family="Arial,sans-serif"><rect x="${x}" y="${y}" width="${w}" height="${h}"/><line x1="${x+165}" y1="${y}" x2="${x+165}" y2="${y+h}"/><line x1="${x+310}" y1="${y}" x2="${x+310}" y2="${y+h}"/><line x1="${x}" y1="${y+26}" x2="${x+w}" y2="${y+26}"/><line x1="${x}" y1="${y+54}" x2="${x+w}" y2="${y+54}"/><line x1="${x+310}" y1="${y+42}" x2="${x+w}" y2="${y+42}"/><text x="${x+8}" y="${y+12}" fill="#111" stroke="none" font-size="6.7">Изм.  Лист  № докум.  Подп.  Дата</text><text x="${x+8}" y="${y+24}" fill="#111" stroke="none" font-size="6.7">Разраб.  ROZFOOD</text><text x="${x+176}" y="${y+19}" fill="#111" stroke="none" font-size="12" font-weight="700">${esc(projectName)}</text><text x="${x+176}" y="${y+47}" fill="#111" stroke="none" font-size="8.5">Деталь · автоматический чертёж</text><text x="${x+320}" y="${y+12}" fill="#111" stroke="none" font-size="6.7">Лит.   Масса   Масштаб</text><text x="${x+w-16}" y="${y+38}" text-anchor="end" fill="#111" stroke="none" font-size="12" font-weight="700">${scale}</text><text x="${x+320}" y="${y+51}" fill="#111" stroke="none" font-size="6.7">Лист 1   Листов 1</text><text x="${x+176}" y="${y+69}" fill="#111" stroke="none" font-size="7.3">ROZFOOD ENGINEERING STUDIO · ANALYTIC RECONSTRUCTION CORE v2.4</text></g>`;
+  return `<g stroke="#111" fill="none" stroke-width=".7" font-family="Arial,sans-serif"><rect x="${x}" y="${y}" width="${w}" height="${h}"/><line x1="${x+165}" y1="${y}" x2="${x+165}" y2="${y+h}"/><line x1="${x+310}" y1="${y}" x2="${x+310}" y2="${y+h}"/><line x1="${x}" y1="${y+26}" x2="${x+w}" y2="${y+26}"/><line x1="${x}" y1="${y+54}" x2="${x+w}" y2="${y+54}"/><line x1="${x+310}" y1="${y+42}" x2="${x+w}" y2="${y+42}"/><text x="${x+8}" y="${y+12}" fill="#111" stroke="none" font-size="6.7">Изм.  Лист  № докум.  Подп.  Дата</text><text x="${x+8}" y="${y+24}" fill="#111" stroke="none" font-size="6.7">Разраб.  ROZFOOD</text><text x="${x+176}" y="${y+19}" fill="#111" stroke="none" font-size="12" font-weight="700">${esc(projectName)}</text><text x="${x+176}" y="${y+47}" fill="#111" stroke="none" font-size="8.5">Деталь · автоматический чертёж</text><text x="${x+320}" y="${y+12}" fill="#111" stroke="none" font-size="6.7">Лит.   Масса   Масштаб</text><text x="${x+w-16}" y="${y+38}" text-anchor="end" fill="#111" stroke="none" font-size="12" font-weight="700">${scale}</text><text x="${x+320}" y="${y+51}" fill="#111" stroke="none" font-size="6.7">Лист 1   Листов 1</text><text x="${x+176}" y="${y+69}" fill="#111" stroke="none" font-size="7.3">ROZFOOD ENGINEERING STUDIO · ANALYTIC SECTION & CURVE CORE v2.5</text></g>`;
 }
 
 const fmtRu=(value,digits=2)=>Number.isFinite(value)?Number(value.toFixed(digits)).toString().replace('.',','):'—';
@@ -456,7 +477,7 @@ function renderGeneralComponentSheet(svg,part,{componentName='Деталь',file
   const pnotes=holeNotes(part,5),cnotes=precisionNotes(part,4),notes=[...pnotes,...cnotes].slice(0,8);
   if(notes.length){s+=`<g font-family="Arial" fill="#111"><text x="830" y="790" font-size="10.5" font-weight="700">Проверяемые элементы</text>`;notes.forEach((t,i)=>s+=`<text x="830" y="${810+i*16}" font-size="8.8">${esc(t)}</text>`);s+='</g>'}
   s+=renderPartStamp(componentName,scale,{x:860,y:845,w:495,h:95});
-  s+=`<text x="95" y="944" font-family="Arial" font-size="7" fill="#555">ROZFOOD ENGINEERING STUDIO · Drawing Intelligence v2.4.0 · GENERAL PART · ${esc(fileName)}</text><text x="1240" y="815" font-family="Arial" font-size="9" text-anchor="end" fill="#111">VERIFIED TESS</text>`;
+  s+=`<text x="95" y="944" font-family="Arial" font-size="7" fill="#555">ROZFOOD ENGINEERING STUDIO · Drawing Intelligence v2.5.0 · GENERAL PART · ${esc(fileName)}</text><text x="1240" y="815" font-family="Arial" font-size="9" text-anchor="end" fill="#111">VERIFIED TESS</text>`;
   svg.innerHTML=s;
 }
 
@@ -483,6 +504,6 @@ export function renderComponentProductionSheet(svg,rec,{componentId=null,compone
   const pnotes=holeNotes(part,4);pnotes.forEach((t,i)=>s+=`<text x="${endBox.x+8}" y="${endBox.y+22+i*17}" font-family="Arial" font-size="9.5" fill="#111">${esc(t)}</text>`);const cnotes=precisionNotes(part,3);cnotes.forEach((t,i)=>s+=`<text x="${isoBox.x+8}" y="${isoBox.y+22+i*16}" font-family="Arial" font-size="9" fill="#111">${esc(t)}</text>`);
   s+=`<g stroke="#111" fill="#111" font-family="Arial" font-size="10"><line x1="${main.x+14}" y1="${main.y+main.h/2}" x2="${main.x+main.w-14}" y2="${main.y+main.h/2}" stroke-dasharray="12 4 2 4"/><path d="M${main.x+18} ${main.y+main.h/2}l10 -5v10zM${main.x+main.w-18} ${main.y+main.h/2}l-10 -5v10z"/><text x="${main.x+4}" y="${main.y+main.h/2-8}" stroke="none">A</text><text x="${main.x+main.w-6}" y="${main.y+main.h/2-8}" stroke="none">A</text></g>`;
   s+=renderPartStamp(componentName,scale,{x:860,y:845,w:495,h:95});
-  s+=`<text x="95" y="944" font-family="Arial" font-size="7" fill="#555">ROZFOOD ENGINEERING STUDIO · Drawing Intelligence v2.4.0 · ${esc(fileName)}</text><text x="1240" y="815" font-family="Arial" font-size="9" text-anchor="end" fill="#111">VERIFIED TESS</text>`;
+  s+=`<text x="95" y="944" font-family="Arial" font-size="7" fill="#555">ROZFOOD ENGINEERING STUDIO · Drawing Intelligence v2.5.0 · ${esc(fileName)}</text><text x="1240" y="815" font-family="Arial" font-size="9" text-anchor="end" fill="#111">VERIFIED TESS</text>`;
   svg.innerHTML=s;
 }

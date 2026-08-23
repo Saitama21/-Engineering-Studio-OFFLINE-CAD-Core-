@@ -1,4 +1,4 @@
-// ROZFOOD Engineering Studio v2.4.0 — Analytic CAD Edge Reconstruction Core
+// ROZFOOD Engineering Studio v2.5.0 — Analytic Section & Curve Reconstruction Core
 // Reconstructs engineering primitives from verified FaceTessellations recognition.
 // This is intentionally deterministic/offline and does not claim exact Parasolid decoding.
 
@@ -47,6 +47,23 @@ function circleFit2D(points){
   const [D,E,F]=sol,cx=-D/2,cy=-E/2,rr=cx*cx+cy*cy-F;if(!(rr>1e-12))return null;const radius=Math.sqrt(rr);let se=0;for(const [x,y] of points){const d=Math.hypot(x-cx,y-cy)-radius;se+=d*d}return{cx,cy,radius,rms:Math.sqrt(se/n)}
 }
 function angularCoverage2D(points,cx,cy){if(points.length<3)return 0;const a=points.map(([x,y])=>Math.atan2(y-cy,x-cx)).sort((x,y)=>x-y);let gap=0;for(let i=1;i<a.length;i++)gap=Math.max(gap,a[i]-a[i-1]);gap=Math.max(gap,a[0]+Math.PI*2-a.at(-1));return Math.PI*2-gap}
+
+function unwrapAngles(points,cx,cy){
+  const out=[];let prev=null,acc=0;
+  for(const [x,y] of points){let a=Math.atan2(y-cy,x-cx);if(prev!==null){let d=a-prev;while(d>Math.PI)d-=Math.PI*2;while(d<-Math.PI)d+=Math.PI*2;acc+=d}else acc=a;out.push(acc);prev=a}
+  return out;
+}
+function circularArcFromPlanarChain(points,plane,diag,{circleSegments=120}={}){
+  if(!plane||points.length<5)return null;
+  const {u,v}=planeBasis(plane.normal),o=plane.origin,p2=points.map(p=>[dot(sub(p,o),u),dot(sub(p,o),v)]),fit=circleFit2D(p2);if(!fit)return null;
+  const tol=Math.max(.025,fit.radius*.0018,diag*3e-5);if(fit.radius<tol*3||fit.rms>tol)return null;
+  const ang=unwrapAngles(p2,fit.cx,fit.cy),sweep=ang.at(-1)-ang[0];if(Math.abs(sweep)<.12||Math.abs(sweep)>Math.PI*2.02)return null;
+  // Reject chains that wander backwards around the fitted circle; those are not one CAD arc.
+  let reversals=0;for(let i=2;i<ang.length;i++){const a=ang[i-1]-ang[i-2],b=ang[i]-ang[i-1];if(Math.abs(a)>.01&&Math.abs(b)>.01&&a*b<0)reversals++}if(reversals>1)return null;
+  const center=add(o,add(mul(u,fit.cx),mul(v,fit.cy))),count=Math.max(8,Math.ceil(Math.abs(sweep)/(Math.PI*2)*circleSegments)),samples=[];
+  for(let i=0;i<=count;i++){const t=ang[0]+sweep*i/count;samples.push(add(center,add(mul(u,Math.cos(t)*fit.radius),mul(v,Math.sin(t)*fit.radius))))}
+  return{points:samples,center,radius:fit.radius,sweep,rms:fit.rms};
+}
 function chainBoundaryEdges(edges,q){
   const byVertex=new Map();const addV=(k,i)=>{let a=byVertex.get(k);if(!a)byVertex.set(k,a=[]);a.push(i)};
   edges.forEach((e,i)=>{addV(qkey(e.a,q),i);addV(qkey(e.b,q),i)});const used=new Uint8Array(edges.length),chains=[];
@@ -77,6 +94,10 @@ function cadFaceBoundaries(rec,planes,{circleSegments=120}={}){
           const center=add(o,add(mul(u,fit.cx),mul(v,fit.cy))),samples=[];for(let i=0;i<=circleSegments;i++){const t=i/circleSegments*Math.PI*2;samples.push(add(center,add(mul(u,Math.cos(t)*fit.radius),mul(v,Math.sin(t)*fit.radius))))}
           curves.push({kind:'circle',role:'cad-face-boundary',points:samples,componentId:plane.componentId,faceKey:fk,source:plane,radius:fit.radius,center});continue
         }
+      }
+      if(plane&&!closed&&pts.length>=5){
+        const arc=circularArcFromPlanarChain(pts,plane,diag,{circleSegments});
+        if(arc){curves.push({kind:'arc',role:'cad-face-boundary',points:arc.points,componentId:plane.componentId,faceKey:fk,source:plane,radius:arc.radius,center:arc.center,sweep:arc.sweep});continue}
       }
       let work=closed?simplifyClosed3(pts,simplifyTol):rdp3(pts,simplifyTol);
       if(work.length>=2)curves.push({kind:closed?'loop':'polyline',role:'cad-face-boundary',points:work,componentId:faces[0]?.componentId||null,faceKey:fk,source:plane});
@@ -115,7 +136,7 @@ export function reconstructAnalyticGeometry(rec){
   }));
   const planes=(R.planes||[]).filter(p=>p.confidence>=.88).map((p,i)=>({id:`PLN-${i+1}`,kind:'plane',componentId:p.componentId||null,faceKey:p.faceKey||null,normal:norm(p.normal),origin:p.origin.slice(),area:p.area||0,confidence:p.confidence}));
   const faceKeys=new Set([...cylinders.map(c=>c.faceKey),...planes.map(p=>p.faceKey)].filter(Boolean));
-  const out={version:'2.4.0',source:'verified-tessellation-analytics',exactParasolid:false,cylinders,planes,patterns,recognizedFaceKeys:faceKeys,counts:{cylinders:cylinders.length,planes:planes.length,patterns:patterns.length,cadBoundaries:0}};
+  const out={version:'2.5.0',source:'verified-tessellation-analytics',exactParasolid:false,cylinders,planes,patterns,recognizedFaceKeys:faceKeys,counts:{cylinders:cylinders.length,planes:planes.length,patterns:patterns.length,cadBoundaries:0}};
   cache.set(rec,out);return out;
 }
 
@@ -163,6 +184,33 @@ export function cylinderViewCurves(c,viewDir,{circleSegments=96}={}){
   let u=cross(a,Math.abs(a[2])<.8?[0,0,1]:[1,0,0]);u=norm(u);const v=norm(cross(a,u));
   for(const center of [p0,p1]){const pts=[];for(let i=0;i<=circleSegments;i++){const t=i/circleSegments*Math.PI*2;pts.push(add(center,add(mul(u,Math.cos(t)*c.radius),mul(v,Math.sin(t)*c.radius))))}out.push({kind:'circle',role:'rim',points:pts,componentId:c.componentId,source:c})}
   return out;
+}
+
+
+/** Exact section curves for recognized finite cylinders. Supports perpendicular, axial and oblique cuts. */
+export function analyticSectionCurves(rec,planePoint,planeNormal,{circleSegments=128,minConfidence=.78}={}){
+  const A=reconstructAnalyticGeometry(rec),n=norm(planeNormal),out=[];
+  for(const c of A.cylinders){
+    if(c.confidence<minConfidence)continue;const a=norm(c.axis),den=dot(a,n),ad=Math.abs(den),h=c.length/2;
+    if(ad>.985){
+      const t=dot(sub(planePoint,c.axisPoint),n)/den;if(Math.abs(t)>h+.02)continue;const center=add(c.axisPoint,mul(a,t));let u=cross(a,Math.abs(a[2])<.8?[0,0,1]:[1,0,0]);u=norm(u);const v=norm(cross(a,u)),pts=[];
+      for(let i=0;i<=circleSegments;i++){const q=i/circleSegments*Math.PI*2;pts.push(add(center,add(mul(u,Math.cos(q)*c.radius),mul(v,Math.sin(q)*c.radius))))}
+      out.push({kind:'circle',role:'section-cylinder',points:pts,componentId:c.componentId,faceKey:c.faceKey,source:c});continue;
+    }
+    if(ad<.12){
+      const dist=dot(sub(c.axisPoint,planePoint),n);if(Math.abs(dist)>=c.radius-.001)continue;const m=norm(cross(a,n)),off=Math.sqrt(Math.max(0,c.radius*c.radius-dist*dist)),base=mul(n,-dist),p0=add(c.axisPoint,mul(a,-h)),p1=add(c.axisPoint,mul(a,h));
+      for(const sg of [1,-1]){const r=add(base,mul(m,sg*off));out.push({kind:'line',role:'section-cylinder',points:[add(p0,r),add(p1,r)],componentId:c.componentId,faceKey:c.faceKey,source:c})}continue;
+    }
+    // Oblique plane: parameterize the cylinder and solve the plane equation for axial t.
+    let u=cross(a,Math.abs(a[2])<.8?[0,0,1]:[1,0,0]);u=norm(u);const v=norm(cross(a,u)),samples=[],runs=[];
+    for(let i=0;i<=circleSegments;i++){
+      const q=i/circleSegments*Math.PI*2,rad=add(mul(u,Math.cos(q)*c.radius),mul(v,Math.sin(q)*c.radius)),t=-dot(sub(add(c.axisPoint,rad),planePoint),n)/den;
+      const p=Math.abs(t)<=h+.001?add(add(c.axisPoint,rad),mul(a,t)):null;
+      if(p)samples.push(p);else if(samples.length){if(samples.length>1)runs.push(samples.splice(0));else samples.length=0}
+    }
+    if(samples.length>1)runs.push(samples);for(const pts of runs)out.push({kind:'ellipse-arc',role:'section-cylinder',points:pts,componentId:c.componentId,faceKey:c.faceKey,source:c});
+  }
+  return{analytic:A,curves:out};
 }
 
 export function analyticViewCurves(rec,viewDir,options={}){

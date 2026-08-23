@@ -1,4 +1,4 @@
-// ROZFOOD Engineering Studio v2.6.0 — Local Detail & Feature Curve Reconstruction Core
+// ROZFOOD Engineering Studio v2.7.0 — Helical / Spline Feature Reconstruction Core
 // Reconstructs engineering primitives from verified FaceTessellations recognition.
 // This is intentionally deterministic/offline and does not claim exact Parasolid decoding.
 
@@ -136,7 +136,7 @@ export function reconstructAnalyticGeometry(rec){
   }));
   const planes=(R.planes||[]).filter(p=>p.confidence>=.88).map((p,i)=>({id:`PLN-${i+1}`,kind:'plane',componentId:p.componentId||null,faceKey:p.faceKey||null,normal:norm(p.normal),origin:p.origin.slice(),area:p.area||0,confidence:p.confidence}));
   const faceKeys=new Set([...cylinders.map(c=>c.faceKey),...planes.map(p=>p.faceKey)].filter(Boolean));
-  const out={version:'2.6.0',source:'verified-tessellation-analytics',exactParasolid:false,cylinders,planes,patterns,recognizedFaceKeys:faceKeys,counts:{cylinders:cylinders.length,planes:planes.length,patterns:patterns.length,cadBoundaries:0}};
+  const out={version:'2.7.0',source:'verified-tessellation-analytics',exactParasolid:false,cylinders,planes,patterns,recognizedFaceKeys:faceKeys,counts:{cylinders:cylinders.length,planes:planes.length,patterns:patterns.length,cadBoundaries:0}};
   cache.set(rec,out);return out;
 }
 
@@ -213,6 +213,92 @@ export function analyticSectionCurves(rec,planePoint,planeNormal,{circleSegments
   return{analytic:A,curves:out};
 }
 
+
+
+// --- v2.7.0 Helical / spline feature reconstruction ---------------------------------
+// FaceTessellations often preserves the boundary of a swept helical plate very well even
+// when it does not expose the original SolidWorks spline/helix entity.  Reconstruct those
+// boundaries analytically instead of drawing hundreds of tessellation chords.
+function dominantAssemblyAxisFrame(rec){
+  const size=rec?.bounds?.size||[1,1,1];let i=0;if(size[1]>size[i])i=1;if(size[2]>size[i])i=2;
+  let axis=[0,0,0];axis[i]=1;let axisPoint=rec?.bounds?.center?.slice?.()||[0,0,0];
+  const major=size[i]||1,minor=Math.max(...size.filter((_,j)=>j!==i),1);
+  const candidates=(rec?.recognition?.outerCylinders||[]).filter(c=>c.full&&c.length>major*.62&&c.diameter<minor*.28&&Math.abs(dot(norm(c.axis),axis))>.985).sort((a,b)=>b.length-a.length||b.confidence-a.confidence);
+  if(candidates[0]){axis=canonicalAxis(candidates[0].axis);axisPoint=candidates[0].axisPoint.slice()}
+  const {u,v}=planeBasis(axis);return{axis,axisPoint,u,v,major,minor};
+}
+function unwrapRunAngles(run){
+  const out=[];let prev=null,acc=0;
+  for(const q of run){let a=q.angle;if(prev!==null){let d=a-prev;while(d>Math.PI)d-=Math.PI*2;while(d<-Math.PI)d+=Math.PI*2;acc+=d}else acc=a;out.push(acc);prev=a}
+  return out;
+}
+function fitHelicalRun(run){
+  if(run.length<8)return null;const A=unwrapRunAngles(run),T=run.map(q=>q.t),R=run.map(q=>q.radius),n=run.length;
+  const tm=T.reduce((a,b)=>a+b,0)/n,am=A.reduce((a,b)=>a+b,0)/n,rm=R.reduce((a,b)=>a+b,0)/n;
+  let stt=0,sta=0;for(let i=0;i<n;i++){const dt=T[i]-tm;stt+=dt*dt;sta+=dt*(A[i]-am)}if(stt<1e-8)return null;
+  const k=sta/stt,b=am-k*tm,angleRms=Math.sqrt(A.reduce((s,a,i)=>s+(a-(k*T[i]+b))**2,0)/n),radiusRms=Math.sqrt(R.reduce((s,r)=>s+(r-rm)**2,0)/n),tmin=Math.min(...T),tmax=Math.max(...T),span=tmax-tmin,pitch=Math.PI*2/Math.abs(k||1e-12);
+  return{k,b,radius:rm,radiusRms,angleRms,tmin,tmax,span,pitch,sweep:k*span};
+}
+function splitHelicalRuns(points,frame){
+  const raw=points.map(p=>{const d=sub(p,frame.axisPoint),x=dot(d,frame.u),y=dot(d,frame.v);return{p,t:dot(d,frame.axis),radius:Math.hypot(x,y),angle:Math.atan2(y,x)}}),runs=[];
+  let start=0;
+  for(let i=1;i<=raw.length;i++){
+    let split=i===raw.length;
+    if(!split){
+      const radialJump=Math.abs(raw[i].radius-raw[i-1].radius)>Math.max(3.5,frame.minor*.012);
+      const radialDrift=i-start>5&&Math.abs(raw[i].radius-raw[start].radius)>Math.max(3.5,frame.minor*.012);
+      const dtPrev=i>=2?raw[i-1].t-raw[i-2].t:0,dtNow=raw[i].t-raw[i-1].t;
+      const reverse=i-start>7&&Math.abs(dtPrev)>.35&&Math.abs(dtNow)>.35&&dtPrev*dtNow<0;
+      split=radialJump||radialDrift||reverse;
+    }
+    if(split){if(i-start>=8)runs.push(raw.slice(start,i));start=i}
+  }
+  return runs;
+}
+function helicalFeatureCurves(rec,boundaries,{samplesPerTurn=96}={}){
+  const frame=dominantAssemblyAxisFrame(rec),accepted=[],suppressedComponents=new Set(),candidateFaceKeys=new Set();
+  if(frame.major/frame.minor<1.7)return{curves:[],suppressedComponents,candidateFaceKeys,count:0};
+  for(const curve of boundaries){
+    const pts=curve.points||[];if(pts.length<20)continue;
+    for(const run of splitHelicalRuns(pts,frame)){
+      const fit=fitHelicalRun(run);if(!fit)continue;
+      const minSpan=Math.max(24,frame.minor*.055),maxRadius=frame.minor*.53,minRadius=frame.minor*.12;
+      if(fit.span<minSpan||fit.radius<minRadius||fit.radius>maxRadius)continue;
+      if(fit.radiusRms>Math.max(.55,fit.radius*.006)||fit.angleRms>.045)continue;
+      if(Math.abs(fit.sweep)<.55||fit.pitch<frame.minor*.18||fit.pitch>frame.major*1.8)continue;
+      // Dense smooth reconstruction of the centerline of this CAD helical edge.
+      const turns=Math.abs(fit.sweep)/(Math.PI*2),count=Math.max(18,Math.ceil(turns*samplesPerTurn)),points=[];
+      for(let i=0;i<=count;i++){
+        const t=fit.tmin+(fit.tmax-fit.tmin)*i/count,ang=fit.k*t+fit.b;
+        points.push(add(frame.axisPoint,add(mul(frame.axis,t),add(mul(frame.u,Math.cos(ang)*fit.radius),mul(frame.v,Math.sin(ang)*fit.radius)))));
+      }
+      accepted.push({kind:'helix',role:'helical-feature-boundary',points,componentId:curve.componentId,faceKey:curve.faceKey,source:curve,pitch:fit.pitch,radius:fit.radius,tmin:fit.tmin,tmax:fit.tmax,k:fit.k,b:fit.b,fitError:fit.angleRms});
+      if(curve.componentId)suppressedComponents.add(curve.componentId);if(curve.faceKey)candidateFaceKeys.add(curve.faceKey);
+    }
+  }
+  // Merge duplicate runs emitted by opposite tessellated faces of the same sheet-metal edge.
+  accepted.sort((a,b)=>Math.abs(b.tmax-b.tmin)-Math.abs(a.tmax-a.tmin));const unique=[];
+  for(const h of accepted){
+    const dup=unique.find(x=>x.componentId===h.componentId&&Math.abs(x.radius-h.radius)<1.2&&Math.abs(x.pitch-h.pitch)<2.5&&Math.abs(x.tmin-h.tmin)<4&&Math.abs(x.tmax-h.tmax)<4&&Math.sign(x.k)===Math.sign(h.k));
+    if(!dup)unique.push(h);
+  }
+  // Rebuild radial end edges of plate-like helical components from paired inner/outer helices.
+  const connectors=[];const byComp=new Map();for(const h of unique){let a=byComp.get(h.componentId);if(!a)byComp.set(h.componentId,a=[]);a.push(h)}
+  for(const [componentId,list] of byComp){
+    for(let i=0;i<list.length;i++)for(let j=i+1;j<list.length;j++){
+      const a=list[i],b=list[j];if(Math.abs(a.radius-b.radius)<Math.max(8,frame.minor*.06))continue;
+      if(Math.abs(a.pitch-b.pitch)>3||Math.sign(a.k)!==Math.sign(b.k))continue;
+      const lo=Math.max(a.tmin,b.tmin),hi=Math.min(a.tmax,b.tmax);if(hi-lo<Math.max(18,frame.minor*.04))continue;
+      for(const t of [lo,hi]){
+        const pa=add(frame.axisPoint,add(mul(frame.axis,t),add(mul(frame.u,Math.cos(a.k*t+a.b)*a.radius),mul(frame.v,Math.sin(a.k*t+a.b)*a.radius))));
+        const pb=add(frame.axisPoint,add(mul(frame.axis,t),add(mul(frame.u,Math.cos(b.k*t+b.b)*b.radius),mul(frame.v,Math.sin(b.k*t+b.b)*b.radius))));
+        if(len(sub(pa,pb))<frame.minor*.42)connectors.push({kind:'line',role:'helical-feature-end',points:[pa,pb],componentId,source:null});
+      }
+    }
+  }
+  return{curves:unique.concat(connectors),suppressedComponents,candidateFaceKeys,count:unique.length,connectorCount:connectors.length,frame};
+}
+
 export function analyticViewCurves(rec,viewDir,options={}){
   const A=reconstructAnalyticGeometry(rec),out=[];
   for(const c of A.cylinders){
@@ -221,8 +307,18 @@ export function analyticViewCurves(rec,viewDir,options={}){
     out.push(...cylinderViewCurves(c,viewDir,options));
   }
   const boundaries=cadFaceBoundaries(rec,A.planes,{circleSegments:options.circleSegments||120});
-  out.push(...boundaries);
-  for(const c of boundaries)if(c.faceKey)A.recognizedFaceKeys.add(c.faceKey);
-  A.counts.cadBoundaries=boundaries.length;
+  const helical=helicalFeatureCurves(rec,boundaries,{samplesPerTurn:options.detail?128:96});
+  // For components with a verified helix fit, replace long noisy tessellation boundary loops by
+  // the smooth reconstructed feature curves. Keep compact end/planar boundaries as context.
+  const filtered=boundaries.filter(c=>{
+    if(!helical.suppressedComponents.has(c.componentId))return true;
+    const pts=c.points||[];if(pts.length<18)return true;
+    let min=Infinity,max=-Infinity;const frame=helical.frame;for(const p of pts){const t=dot(sub(p,frame.axisPoint),frame.axis);min=Math.min(min,t);max=Math.max(max,t)}
+    return max-min<Math.max(20,frame.minor*.045);
+  });
+  out.push(...filtered,...helical.curves);
+  for(const c of filtered)if(c.faceKey)A.recognizedFaceKeys.add(c.faceKey);
+  for(const c of helical.curves)if(c.faceKey)A.recognizedFaceKeys.add(c.faceKey);
+  A.counts.cadBoundaries=filtered.length;A.counts.helicalCurves=helical.count;A.counts.helicalConnectors=helical.connectorCount;
   return{analytic:A,curves:out};
 }

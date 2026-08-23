@@ -5,19 +5,9 @@
   "display": "standalone",
   "background_color": "#f5f7fa",
   "theme_color": "#ffffff",
-  "description": "Offline SLDASM CAD: native 3D assembly, verified analytical geometry, adaptive AXIAL/GENERAL drawings and an advanced local drawing editor with a dedicated Edit/Zoom/Pan toolbar, cursor-anchored smooth zoom, focus-priority local drawing render, viewport linework reduction, cached drawing renders, annotation editing, tolerances, notes, roughness and weld symbols, plus interactive LOD for large assemblies. No AI/API or server CAD.",
+  "description": "Offline SLDASM CAD v1.5.0: component tree and BOM, local FaceTessellations 3D, ROZFOOD faceted B-Rep V/E/F/Shell topology, verified analytical geometry, adaptive drawings, Advanced Edit with cursor-anchored smooth zoom and focus-priority local drawing rendering. Exact Parasolid surfaces/curves are not yet decoded. No AI/API or server CAD.",
   "icons": [
-    {
-      "src": "icons/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "icons/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
-    }
+    {"src":"icons/icon-192.png","sizes":"192x192","type":"image/png","purpose":"any maskable"},
+    {"src":"icons/icon-512.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}
   ]
 }

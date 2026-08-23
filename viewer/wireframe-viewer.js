@@ -12,7 +12,7 @@ export class WireframeViewer{
   setModel(rec){this.rec=rec;this.selectedComponent=null;this.fit();this.draw()}
   clear(){this.rec=null;this.selectedComponent=null;this.draw()}
   fit(){this.zoom=1;this.pan=[0,0];this.draw()}
-  setMode(mode){this.mode=mode==='wire'?'wire':'solid';this.draw()}
+  setMode(mode){this.mode=['solid','wire','brep'].includes(mode)?mode:'solid';this.draw()}
   setSelectedComponent(id){this.selectedComponent=id||null;this.draw()}
   requestDraw(){if(this.framePending)return;this.framePending=true;requestAnimationFrame(()=>{this.framePending=false;this.draw()})}
   beginInteraction(){this.interacting=true;clearTimeout(this.interactionTimer)}
@@ -38,7 +38,7 @@ export class WireframeViewer{
       // Simple CAD-like face shading from the first non-collinear points in view coordinates.
       let shade=1;const q=loops[0].map(p=>p[3]);for(let i=2;i<q.length;i++){const n=norm(cross(sub(q[1],q[0]),sub(q[i],q[0])));if(Math.hypot(...n)>.1){shade=.75+.22*Math.abs(n[2]);break}}
       if(f.componentId)c.fillStyle=this.componentStyle(f.componentId,Math.min(1,alpha*shade));else c.fillStyle=dark?`rgba(70,112,158,${Math.min(1,alpha*.9)})`:`rgba(153,186,219,${alpha})`;try{c.fill('evenodd')}catch{c.fill()}
-      c.strokeStyle=dark?'rgba(155,190,225,.18)':'rgba(43,84,125,.16)';c.lineWidth=.38;c.stroke();
+      if(this.mode!=='brep'){c.strokeStyle=dark?'rgba(155,190,225,.18)':'rgba(43,84,125,.16)';c.lineWidth=.38;c.stroke();}
       if(f.componentId)this.hitFaces.push({componentId:f.componentId,instance:f.instance,poly:loops[0].map(p=>[p[0],p[1]])});
     }
   }
@@ -57,10 +57,10 @@ export class WireframeViewer{
     c.clearRect(0,0,w,h);c.fillStyle=bg;c.fillRect(0,0,w,h);c.strokeStyle=grid;c.lineWidth=1;for(let x=0;x<w;x+=40){c.beginPath();c.moveTo(x,0);c.lineTo(x,h);c.stroke()}for(let y=0;y<h;y+=40){c.beginPath();c.moveTo(0,y);c.lineTo(w,y);c.stroke()}
     if(!this.rec){c.fillStyle=muted;c.font='14px -apple-system,BlinkMacSystemFont,system-ui';c.fillText('Загрузите SLDASM',24,36);return}
     const b=this.rec.bounds,max=Math.max(...b.size,1),scale=Math.min(w,h)*.72/max,cx=w/2+this.pan[0],cy=h/2+this.pan[1],center=b.center;
-    if(this.mode==='solid'&&(this.rec.faces?.length||0))this.drawFaces(c,scale,cx,cy,center);else{this.hitFaces=[];if(this.mode==='wire'&&(this.rec.faces?.length||0))this.drawFaceWire(c,scale,cx,cy,center)}
+    if((this.mode==='solid'||this.mode==='brep')&&(this.rec.faces?.length||0))this.drawFaces(c,scale,cx,cy,center);else{this.hitFaces=[];if(this.mode==='wire'&&(this.rec.faces?.length||0))this.drawFaceWire(c,scale,cx,cy,center)}
     const segs=[],edgeSource=this.rec.edges||[],edgeStep=this.interacting&&edgeSource.length>42000?Math.ceil(edgeSource.length/42000):1;for(let ei=0;ei<edgeSource.length;ei+=edgeStep){const e=edgeSource[ei];const pts=e.points?.length?e.points:(e.p1&&e.p2?[e.p1,e.p2]:[]);for(let i=0;i<pts.length-1;i++){const a=this.project(pts[i],scale,cx,cy,center),bb=this.project(pts[i+1],scale,cx,cy,center);segs.push([a,bb,(a[2]+bb[2])/2,e])}}
-    segs.sort((a,b)=>a[2]-b[2]);for(const [a,bb,,e] of segs){const selected=!this.selectedComponent||e.componentId===this.selectedComponent;c.globalAlpha=this.selectedComponent?(selected?1:.06):(this.mode==='solid'?.22:.88);c.strokeStyle=selected&&this.selectedComponent?'#006cff':(e.kind==='circle'?circle:wire);c.lineWidth=selected&&this.selectedComponent?2.2:(this.mode==='solid'?.48:(e.kind==='circle'?1.5:1.05));c.beginPath();c.moveTo(a[0],a[1]);c.lineTo(bb[0],bb[1]);c.stroke()}
-    c.globalAlpha=1;c.fillStyle=muted;c.font='12px ui-monospace,SFMono-Regular,Menlo,monospace';const sceneEdges=this.rec.counts.sceneEdges??this.rec.edges?.length??0,sceneFaces=this.rec.counts.sceneFaces??this.rec.faces?.length??0,parts=this.rec.counts.sceneComponents??this.rec.components?.length??0;c.fillText(`${parts?parts+' components · ':''}${sceneFaces} triangles · ${sceneEdges} derived edges`,14,h-16);
+    segs.sort((a,b)=>a[2]-b[2]);for(const [a,bb,,e] of segs){const selected=!this.selectedComponent||e.componentId===this.selectedComponent;c.globalAlpha=this.selectedComponent?(selected?1:.06):(this.mode==='solid'?.22:this.mode==='brep'?.92:.88);c.strokeStyle=selected&&this.selectedComponent?'#006cff':(e.kind==='boundary'?'#d97706':e.kind==='nonmanifold'?'#dc2626':e.kind==='circle'?circle:wire);c.lineWidth=selected&&this.selectedComponent?2.2:(this.mode==='solid'?.48:this.mode==='brep'?(e.kind==='boundary'||e.kind==='nonmanifold'?1.55:1.05):(e.kind==='circle'?1.5:1.05));c.beginPath();c.moveTo(a[0],a[1]);c.lineTo(bb[0],bb[1]);c.stroke()}
+    c.globalAlpha=1;c.fillStyle=muted;c.font='12px ui-monospace,SFMono-Regular,Menlo,monospace';const sceneEdges=this.rec.edges?.length??this.rec.counts.sceneEdges??0,sceneFaces=this.rec.counts.sceneFaces??this.rec.faces?.length??0,parts=this.rec.counts.sceneComponents??this.rec.components?.length??0;const bc=this.rec.brep?.counts,brepText=this.mode==='brep'&&bc?` · B-Rep ${bc.vertices}V / ${bc.edges}E / ${bc.faces}F / ${bc.shells} shells${this.rec.brep.topologyComplete&&Number.isFinite(bc.closedShells)?` / ${bc.closedShells} closed`:''}`:'';c.fillText(`${parts?parts+' components · ':''}${sceneFaces} triangles · ${sceneEdges} display edges${brepText}`,14,h-16);
     if(this.selectedComponent){const comp=(this.rec.occurrences||[]).find(x=>x.id===this.selectedComponent);if(comp){c.fillStyle=themeColor('--text-strong','#17202b');c.font='600 13px -apple-system,BlinkMacSystemFont,system-ui';c.fillText(`Выбрано: ${comp.name}`,14,24)}}
   }
 }

@@ -1,11 +1,12 @@
 import {parseSLDASM} from './import/sldasm-adapter.js';
 import {recognizeTessellationGeometry,recognitionDimensions} from './core/tess-recognition.js';
+import {buildFacetedBRep} from './core/brep-core.js';
 
 const MAX_TRANSFER_FACES=80000;
 const MIN_FACES_PER_COMPONENT=64;
 
 function liteFace(f){
-  return{loops:f?.loops||[],componentId:f?.componentId||'',componentName:f?.instance?.name||f?.componentName||''};
+  return{loops:f?.loops||[],componentId:f?.componentId||'',componentName:f?.instance?.name||f?.componentName||'',tessFaceId:Number.isFinite(f?.tessFaceId)?f.tessFaceId:null,sourceStream:f?.sourceStream||''};
 }
 
 function compactFacesForTransfer(rec){
@@ -85,9 +86,18 @@ self.onmessage=async e=>{
     }
     stage='dimensions';
     let dimensions=rec.geometryAvailable?recognitionDimensions(rec,rec.recognition,{limit:36}):[];
-    const types=rec.recognition?['plane','cylinder','hole','axis']:[];
+    const types=rec.recognition?['plane','cylinder','hole','axis','brep-topology']:[];
     stage='prepare-transfer';
     dimensions=slimForTransfer(rec,dimensions);
+    stage='brep-core';
+    if(rec.geometryAvailable){
+      rec.brep=buildFacetedBRep(rec,{maxDisplayEdges:42000,sharpAngleDeg:28});
+      rec.edges=rec.brep.displayEdges||[];
+      delete rec.brep.displayEdges;
+      const bc=rec.brep.counts||{};
+      rec.counts.brepVertices=bc.vertices||0;rec.counts.brepEdges=bc.edges||0;rec.counts.brepFaces=bc.faces||0;rec.counts.brepShells=bc.shells||0;rec.counts.brepClosedShells=bc.closedShells;
+      rec.counts.vertices=bc.vertices||rec.counts.vertices;rec.counts.edges=bc.edges||0;rec.counts.shells=bc.shells||0;if(Number.isFinite(bc.closedShells))rec.counts.solids=bc.closedShells;
+    }
     stage='post-message';
     self.postMessage({ok:true,rec,dimensions,types,parseMs:performance.now()-t0,importKind:'sldasm'});
   }catch(err){

@@ -189,3 +189,8 @@ html[data-theme="dark"] .drawing-workspace{background:linear-gradient(145deg,#10
 .drawing-workspace.advanced-edit-nav.tool-zoom::after{content:'Зум · колесо — локальный рендер вокруг курсора · клик — приблизить · Shift+клик — отдалить'}
 .drawing-workspace.advanced-edit-nav.tool-pan::after{content:'Панорама · тянуть ЛКМ · локальный рендер видимой области · колесо — зум'}
 @media(max-width:760px){.drawing-workspace.drawing-local-render::before{right:7px;bottom:7px;font-size:8px}}
+
+/* v1.5.0 · B-Rep Core Alpha */
+.brep-feature{background:color-mix(in srgb,var(--accent) 7%,var(--panel))!important}.brep-feature strong{color:var(--green)!important}
+#brepBtn.active{border-color:color-mix(in srgb,var(--accent) 45%,var(--line));background:color-mix(in srgb,var(--accent) 13%,var(--panel));color:var(--accent);font-weight:700}
+.bom-hint{padding:8px 2px 0;margin:0}.bom-component{border-radius:7px}.bom-component:hover{background:color-mix(in srgb,var(--accent) 8%,var(--panel))}

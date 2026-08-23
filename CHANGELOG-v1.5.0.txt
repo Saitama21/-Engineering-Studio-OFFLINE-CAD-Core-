@@ -1,0 +1,48 @@
+ROZFOOD ENGINEERING STUDIO v1.5.0
+B-REP CORE ALPHA
+
+ЦЕЛЬ СБОРКИ
+Перейти от чистого отображения FaceTessellations к собственной топологической модели,
+не ломая плавность v1.4.2 и не выдавая faceted topology за исходный exact Parasolid B-Rep.
+
+НОВОЕ ЯДРО
+- Добавлен core/brep-core.js.
+- После локального SLDASM-импорта строится V/E/F/Shell-граф:
+  Vertex -> Edge -> Face -> Shell.
+- При импорте сохраняется tessFaceId/sourceStream из FaceTessellations.
+- Треугольники одного исходного FaceTessellations face-block объединяются в один B-Rep Face.
+- Внутренние диагонали тесселяции отделяются от межгранных/topology edges.
+- Для файлов без face-block metadata включается fallback: smooth-patch segmentation.
+- Совпадающие tessellation-вершины свариваются детерминированным tolerance в mm,
+  но топология изолирована по каждому component occurrence — соприкасающиеся детали не склеиваются.
+- Определяются boundary, sharp, smooth и non-manifold topology edges.
+- Для полного topology-покрытия вычисляются shell closure, площадь и faceted volume.
+- Для тяжёлых сборок B-Rep строится по уже оптимизированному display-LOD, чтобы не вернуть лаги;
+  интерфейс явно показывает LOD вместо FULL.
+
+3D
+- Добавлен отдельный режим «B-Rep» рядом с «Объём» и «Каркас».
+- В B-Rep view скрыты внутренние треугольные линии поверхности.
+- Показываются межгранные, boundary, sharp и non-manifold topology edges.
+- Сохранены zoom-to-cursor, pan и интерактивный LOD v1.4.x.
+
+BOM / СБОРКА
+- Позиции BOM теперь кликабельны.
+- Клик по позиции выбирает соответствующий component occurrence в 3D.
+- Для компонентов, где topology доступна, BOM/дерево показывают B-Rep F и Shell.
+- После выбора по-прежнему можно сразу открыть чертёж детали.
+
+ИНТЕРФЕЙС / ДИАГНОСТИКА
+- Добавлены счётчики B-Rep V/E/Shell и процент topology coverage.
+- В «Распознавание» добавлен статус ROZFOOD B-Rep Core.
+- В структуру импорта и JSON engineering report включён B-Rep summary.
+- Exact Parasolid B-Rep помечен отдельно как следующий уровень ядра.
+
+ВАЖНОЕ ОГРАНИЧЕНИЕ
+v1.5.0 уже использует исходную идентичность FaceTessellations face-blocks для слоя Face и строит
+полезную V/E/F/Shell adjacency, но геометрические уравнения Surface/Curve/NURBS всё ещё не извлекаются
+из Parasolid. Поэтому сборка называется B-Rep Core Alpha, а не Exact/Native Parasolid Kernel.
+
+OFFLINE
+- Всё работает локально в браузере.
+- Service Worker cache обновлён до v1.5.0 и включает core/brep-core.js.

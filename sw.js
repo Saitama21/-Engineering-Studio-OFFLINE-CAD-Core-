@@ -4,7 +4,6 @@ const ASSETS=[
   './import/sldasm-adapter.js','./import/slddrw-adapter.js','./core/tess-recognition.js','./core/manufacturing-recognition.js','./core/component-local.js','./core/feature-graph.js','./core/brep-core.js','./core/math3d.js',
   './drawing/drawing-engine.js','./drawing/drawing-reconstruction-core.js','./drawing/flat-pattern.js','./drawing/tess-recognition-drawing.js','./drawing/assembly-production-sheet-v130.js','./drawing/drawing-editor.js','./drawing/drawing-navigator.js',
   './viewer/wireframe-viewer.js','./manifest.webmanifest',
-  './THIRD_PARTY_NOTICES.txt','./CHANGELOG-v2.1.0.txt','./CHANGELOG-v2.2.0.txt',
   './icons/icon-64.png','./icons/icon-96.png','./icons/icon-180.png','./icons/icon-192.png','./icons/icon-512.png'
 ];
 self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)).then(()=>self.skipWaiting())));

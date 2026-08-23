@@ -1,6 +1,6 @@
-const CACHE='rozfood-engineering-studio-v1.6.0-subassembly-drawing-core';
+const CACHE='rozfood-engineering-studio-v1.7.0-reference-assembly-planner';
 const ASSETS=[
-  './','./index.html','./styles.css?v=1.6.0','./app.js?v=1.6.0','./import-worker.js',
+  './','./index.html','./styles.css?v=1.7.0','./app.js?v=1.7.0','./import-worker.js',
   './import/sldasm-adapter.js','./core/tess-recognition.js','./core/component-local.js','./core/feature-graph.js','./core/brep-core.js','./core/math3d.js',
   './drawing/drawing-engine.js','./drawing/tess-recognition-drawing.js','./drawing/assembly-production-sheet-v130.js','./drawing/drawing-editor.js','./drawing/drawing-navigator.js',
   './viewer/wireframe-viewer.js','./manifest.webmanifest',

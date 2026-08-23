@@ -51,7 +51,7 @@ async function parseModernStreams(bytes){
     const nameStart=si+0x1e,nameEnd=nameStart+nsz;if(nameEnd>bytes.length){pos=markerPos+1;continue}
     const name=decodeRol(bytes.subarray(nameStart,nameEnd),key);if(!validStreamName(name)){pos=markerPos+1;continue}
     const inline=f1>=65536;chunkCount++;streamInfo.push({name,compressedSize:csz,uncompressedSize:usz,inline,offset:si});
-    const wanted=name==='swXmlContents/COMPINSTANCETREE'||name==='PreviewPNG'||name==='FaceTessellations/Directory'||name.startsWith('FaceTessellations/')||name==='Contents/DisplayLists'||name.startsWith('docProps/');
+    const wanted=name==='swXmlContents/COMPINSTANCETREE'||name==='PreviewPNG'||name==='FaceTessellations/Directory'||name.startsWith('FaceTessellations/')||name==='Contents/DisplayLists'||name==='Contents/CusProps'||name==='Contents/Config-0'||name.startsWith('docProps/');
     if(inline&&csz>0&&nameEnd+csz<=bytes.length){
       if(wanted&&!streams.has(name)){try{streams.set(name,await inflateRaw(bytes.subarray(nameEnd,nameEnd+csz)))}catch{inflateErrors++}}
       pos=nameEnd+csz;continue;
@@ -62,6 +62,37 @@ async function parseModernStreams(bytes){
   return{key,streams,streamInfo,chunkCount,inflateErrors};
 }
 function textUtf8(bytes){try{return new TextDecoder('utf-8',{fatal:false}).decode(bytes)}catch{return''}}
+
+function parseDocumentProperties(streams){
+  const values={},sources={};let binaryMass=null,binaryMassSource='';
+  for(const [streamName,bytes] of streams||[]){
+    if(!streamName.startsWith('docProps/')){
+      if(streamName==='Contents/CusProps'||streamName==='Contents/Config-0'){
+        for(const value of [...scanAscii(bytes,4),...scanUtf16LE(bytes,4)]){
+          if(!/SW-Mass@@/i.test(value)||/(?:Разрез|Section)/i.test(value))continue;
+          const tail=value.slice(value.search(/SW-Mass@@/i)+9),match=tail.match(/-?\d+[,.]\d+/);
+          if(match){const candidate=Number(match[0].replace(',','.'));if(Number.isFinite(candidate)&&candidate>0){binaryMass=candidate;binaryMassSource=streamName;break}}
+        }
+      }
+      continue;
+    }
+    const xml=textUtf8(bytes);if(!xml)continue;
+    sources[streamName]=xml;
+    for(const m of xml.matchAll(/<property\b([^>]*)>([\s\S]*?)<\/property>/gi)){
+      const attrs=parseAttrs(m[1]),name=attrs.name||attrs.Name||attrs.pid||'';
+      const valueMatch=m[2].match(/<(?:\w+:)?(?:lpwstr|bstr|r8|r4|i4|int|decimal|bool|filetime)\b[^>]*>([\s\S]*?)<\/(?:\w+:)?(?:lpwstr|bstr|r8|r4|i4|int|decimal|bool|filetime)>/i);
+      if(name&&valueMatch)values[name]=decodeXmlEntities(valueMatch[1].trim());
+    }
+    for(const m of xml.matchAll(/<([\w:.-]+)\b[^>]*>([^<>]{1,240})<\/\1>/g)){
+      const name=m[1].replace(/^\w+:/,''),value=decodeXmlEntities(m[2].trim());
+      if(value&&!values[name])values[name]=value;
+    }
+  }
+  const massEntry=Object.entries(values).find(([key])=>/^(?:mass|масса|weight|вес)$/i.test(key));
+  const declaredMass=massEntry?Number(String(massEntry[1]).replace(',','.').match(/-?\d+(?:\.\d+)?/)?.[0]):NaN;
+  const mass=Number.isFinite(declaredMass)?declaredMass:binaryMass;
+  return{values,mass:Number.isFinite(mass)?mass:null,massSource:Number.isFinite(declaredMass)?'docProps':binaryMassSource,sourceNames:Object.keys(sources)};
+}
 
 function parseComponentTreeXml(xml,fileName){
   if(!xml)return null;
@@ -228,9 +259,10 @@ export async function parseSLDASM(input,fileName='assembly.SLDASM'){
   if(!EXT_RE.test(fileName))throw new Error('SLDASM decoder accepts only .SLDASM');
   const bytes=asBytes(input),t0=typeof performance!=='undefined'?performance.now():Date.now();
   const modern=await parseModernStreams(bytes);
-  let tree=null,rawTriangles=[],rawPoints=[],faceBlocks=[],allBlocks=[],streamNames=[];
+  let tree=null,documentProperties={values:{},mass:null,sourceNames:[]},rawTriangles=[],rawPoints=[],faceBlocks=[],allBlocks=[],streamNames=[];
   if(modern){
     streamNames=modern.streamInfo.map(x=>x.name);
+    documentProperties=parseDocumentProperties(modern.streams);
     const comp=modern.streams.get('swXmlContents/COMPINSTANCETREE');if(comp)tree=parseComponentTreeXml(textUtf8(comp),fileName);
     const tessNames=[...modern.streams.keys()].filter(n=>/^FaceTessellations\/\d+-\d+-\d+$/i.test(n)).sort();
     for(const name of tessNames){const r=parseFaceTessellationStream(modern.streams.get(name),name,1000);appendAll(rawTriangles,r.triangles);appendAll(rawPoints,r.points);appendAll(faceBlocks,r.faceBlocks);appendAll(allBlocks,r.blocks)}
@@ -249,9 +281,9 @@ export async function parseSLDASM(input,fileName='assembly.SLDASM'){
   const parseMs=(typeof performance!=='undefined'?performance.now():Date.now())-t0;
   const unmappedModels=(mapping.leafModels||[]).filter(m=>!mapping.templates.has(m.id)).map(m=>({id:m.id,name:m.name,file:m.fileName}));
   return{
-    format:'SLDASM',adapter:'sldasm-native-brep-core-v1.6.0',geometryAvailable,isAssembly:true,unit:'mm',factor:1,bounds,counts,
+    format:'SLDASM',adapter:'sldasm-native-brep-core-v1.7.0',geometryAvailable,isAssembly:true,unit:'mm',factor:1,bounds,counts,documentProperties,
     faces,edges:[],surfaces:[],radii:[],boltPatterns:[],instances:occurrences,occurrences,products,components,
-    nativeAssembly:{root,file:baseName(fileName),componentCount:components.length,occurrenceCount:occurrences.length,components,container:modern?'SolidWorks 2015+ chunk container':'SolidWorks binary',signatureHex:[...bytes.slice(0,8)].map(b=>b.toString(16).padStart(2,'0')).join(' '),streamCount:streamNames.length,streamNames,swVersion:tree?.swVersion||'',geometryMode:geometryAvailable?(placed.faces.length?'FaceTessellations + assembly transforms':'FaceTessellations local fallback'):'none',tessellationStreams:modern?[...modern.streams.keys()].filter(n=>n.startsWith('FaceTessellations/')):[],faceBlocks:faceBlocks.length,sourceTriangles:rawTriangles.length,triangles:faces.length,nativeScaleToMm:1000,mappedModels:mapping.assignments.length,mappedOccurrences:placed.placedOccurrences.length,totalLeafModels:mapping.leafModels.length,unmappedModels,transformMapping:mapping.assignments,confidence:tree?'decoded-xml+transforms+tess-recognition-ready':(components.length?'legacy-scan':'format-recognized'),note:geometryAvailable?(placed.faces.length?'3D собрано локально из FaceTessellations с применением матриц каждого вхождения SLDASM. Это графическая тесселяция SolidWorks, не точный Parasolid B-Rep.':'3D показано как локальная FaceTessellations-геометрия без картирования вхождений.'):'SLDASM структура прочитана, но в файле не найдено декодируемой встроенной тесселяции.'},
+    nativeAssembly:{root,file:baseName(fileName),componentCount:components.length,occurrenceCount:occurrences.length,components,documentProperties,container:modern?'SolidWorks 2015+ chunk container':'SolidWorks binary',signatureHex:[...bytes.slice(0,8)].map(b=>b.toString(16).padStart(2,'0')).join(' '),streamCount:streamNames.length,streamNames,swVersion:tree?.swVersion||'',geometryMode:geometryAvailable?(placed.faces.length?'FaceTessellations + assembly transforms':'FaceTessellations local fallback'):'none',tessellationStreams:modern?[...modern.streams.keys()].filter(n=>n.startsWith('FaceTessellations/')):[],faceBlocks:faceBlocks.length,sourceTriangles:rawTriangles.length,triangles:faces.length,nativeScaleToMm:1000,mappedModels:mapping.assignments.length,mappedOccurrences:placed.placedOccurrences.length,totalLeafModels:mapping.leafModels.length,unmappedModels,transformMapping:mapping.assignments,confidence:tree?'decoded-xml+transforms+tess-recognition-ready':(components.length?'legacy-scan':'format-recognized'),note:geometryAvailable?(placed.faces.length?'3D собрано локально из FaceTessellations с применением матриц каждого вхождения SLDASM. Это графическая тесселяция SolidWorks, не точный Parasolid B-Rep.':'3D показано как локальная FaceTessellations-геометрия без картирования вхождений.'):'SLDASM структура прочитана, но в файле не найдено декодируемой встроенной тесселяции.'},
     tessellation:{mode:geometryAvailable?'triangle-strips':'none',faceBlocks,sourceStreams:modern?[...modern.streams.keys()].filter(n=>/^FaceTessellations\/\d+-\d+-\d+$/i.test(n)):[],nativeUnit:'m',scaleToMm:1000,assemblyTransformsApplied:placed.faces.length>0,mappedModels:mapping.assignments.length,mappedOccurrences:placed.placedOccurrences.length},
     parseMs
   };

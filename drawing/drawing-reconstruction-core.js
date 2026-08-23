@@ -1,4 +1,4 @@
-// ROZFOOD Engineering Studio v2.1.0 — Drawing Reconstruction Core
+// ROZFOOD Engineering Studio v2.3.0 — Drawing Reconstruction Core
 // Faceted source in, engineering linework out. No AI / no server dependency.
 
 const dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
@@ -48,8 +48,10 @@ export function buildDrawingTopology(rec){
       if(!a||!b||len(sub(a,b))<q*.1)continue;
       const k=edgeKey(a,b,componentId,q);
       let e=map.get(k);
-      if(!e){e={a,b,componentId,normals:[],faces:0};map.set(k,e)}
+      if(!e){e={a,b,componentId,normals:[],faces:0,faceKeys:[]};map.set(k,e)}
       e.normals.push(n);e.faces++;
+      const fk=[face.componentId||'RAW',face.modelId||'',face.sourceStream||'',face.tessFaceId??''].join('|');
+      if(!e.faceKeys.includes(fk))e.faceKeys.push(fk);
     }
   }
   const edges=[...map.values()];
@@ -92,11 +94,11 @@ function project(p,s){return[dot(p,s.px),dot(p,s.py)]}
 function projectBounds(bounds,s){const pts=corners(bounds).map(p=>project(p,s)),xs=pts.map(p=>p[0]),ys=pts.map(p=>p[1]);return{min:[Math.min(...xs),Math.min(...ys)],max:[Math.max(...xs),Math.max(...ys)]}}
 
 /** Higher-resolution, adaptive tessellated depth field used only as an occlusion oracle. */
-export function buildOcclusionField(rec,s,{targetPixels=180000,maxFaces=85000}={}){
+export function buildOcclusionField(rec,s,{targetPixels=520000,maxFaces=120000}={}){
   const faces=rec?.faces||[];if(!faces.length)return null;
   const ex=projectBounds(rec.bounds,s),spanX=Math.max(ex.max[0]-ex.min[0],1e-9),spanY=Math.max(ex.max[1]-ex.min[1],1e-9),aspect=spanX/spanY;
   let cols=Math.round(Math.sqrt(targetPixels*Math.max(.25,aspect))),rows=Math.round(cols/Math.max(.25,aspect));
-  cols=clamp(cols,260,720)|0;rows=clamp(rows,220,560)|0;
+  cols=clamp(cols,420,1100)|0;rows=clamp(rows,320,900)|0;
   const z=new Float32Array(cols*rows);z.fill(-Infinity);
   const gx=x=>(x-ex.min[0])/spanX*(cols-1),gy=y=>(y-ex.min[1])/spanY*(rows-1);
   const step=faces.length>maxFaces?Math.ceil(faces.length/maxFaces):1;
@@ -115,7 +117,7 @@ export function buildOcclusionField(rec,s,{targetPixels=180000,maxFaces=85000}={
     }
   }
   const diag=Math.hypot(...(rec.bounds?.size||[1,1,1]));
-  return{z,cols,rows,ex,spanX,spanY,tol:Math.max(.025,diag*.00135)};
+  return{z,cols,rows,ex,spanX,spanY,tol:Math.max(.012,diag*.00032)};
 }
 
 export function pointVisible(p,s,field){
@@ -130,25 +132,21 @@ export function pointVisible(p,s,field){
  * Splits an edge into visible intervals instead of dropping/keeping the whole edge.
  * This removes the characteristic "lines through the shell" and torn half-visible edges.
  */
-export function visibleEdgeSegments(edge,s,field,{samples=21}={}){
+export function visibleEdgeSegments(edge,s,field,{samples=33,refine=5}={}){
   if(!field)return[[edge.a,edge.b]];
-  const n=clamp(samples,9,41)|0,pts=[],vis=[];
-  for(let i=0;i<n;i++){
-    const t=i/(n-1),p=add(mul(edge.a,1-t),mul(edge.b,t));pts.push(p);vis.push(pointVisible(p,s,field));
-  }
-  const segs=[];let start=null;
+  const n=clamp(samples,13,65)|0;
+  const at=t=>add(mul(edge.a,1-t),mul(edge.b,t));
+  const states=[];for(let i=0;i<n;i++){const t=i/(n-1);states.push({t,p:at(t),v:pointVisible(at(t),s,field)})}
+  const boundary=(lo,hi,wantVisible)=>{let a=lo,b=hi;for(let k=0;k<refine;k++){const m=(a+b)/2,v=pointVisible(at(m),s,field);if(v===wantVisible)b=m;else a=m}return (a+b)/2};
+  const intervals=[];let open=null;
   for(let i=0;i<n-1;i++){
-    const pair=vis[i]||vis[i+1];
-    if(pair&&start===null)start=i;
-    if(start!==null&&(!pair||i===n-2)){
-      const end=pair&&i===n-2?i+1:i;
-      if(end>start)segs.push([pts[start],pts[end]]);
-      start=null;
-    }
+    const A=states[i],B=states[i+1];
+    if(A.v&&open===null)open=A.t;
+    if(A.v!==B.v){const t=boundary(A.t,B.t,B.v);if(A.v&&open!==null){intervals.push([open,t]);open=null}else if(B.v){open=t}}
+    if(i===n-2&&B.v){if(open===null)open=B.t;intervals.push([open,1]);open=null}
   }
-  return segs;
+  return intervals.filter(([a,b])=>b-a>1e-5).map(([a,b])=>[at(a),at(b)]);
 }
-
 export function reconstructionStats(rec,viewDir){
   const topology=buildDrawingTopology(rec),line=engineeringLinework(rec,viewDir);
   return{rawEdges:topology.edges.length,engineeringEdges:line.length,suppressed:Math.max(0,topology.edges.length-line.length),quantization:topology.quantization};

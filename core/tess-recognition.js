@@ -39,7 +39,7 @@ function solve3(A,b){
   return[m[0][3],m[1][3],m[2][3]];
 }
 function circleFit2D(points){
-  if(points.length<6)return null;
+  if(points.length<3)return null;
   let sx=0,sy=0,sxx=0,syy=0,sxy=0,sr=0,sxr=0,syr=0;
   for(const [x,y] of points){const r=x*x+y*y;sx+=x;sy+=y;sxx+=x*x;syy+=y*y;sxy+=x*y;sr+=r;sxr+=x*r;syr+=y*r}
   const n=points.length,sol=solve3([[sxx,sxy,sx],[sxy,syy,sy],[sx,sy,n]],[-sxr,-syr,-sr]);
@@ -48,7 +48,7 @@ function circleFit2D(points){
   return{cx,cy,radius,rms:Math.sqrt(se/n)};
 }
 function perpendicularBasis(axis){const a=norm(axis),seed=Math.abs(a[2])<.8?[0,0,1]:[1,0,0],u=norm(cross(a,seed)),v=norm(cross(a,u));return{u,v}}
-function angularCoverage(points,cx,cy){if(points.length<6)return 0;const a=points.map(([x,y])=>Math.atan2(y-cy,x-cx)).sort((x,y)=>x-y);let maxGap=0;for(let i=1;i<a.length;i++)maxGap=Math.max(maxGap,a[i]-a[i-1]);maxGap=Math.max(maxGap,a[0]+Math.PI*2-a[a.length-1]);return Math.PI*2-maxGap}
+function angularCoverage(points,cx,cy){if(points.length<3)return 0;const a=points.map(([x,y])=>Math.atan2(y-cy,x-cx)).sort((x,y)=>x-y);let maxGap=0;for(let i=1;i<a.length;i++)maxGap=Math.max(maxGap,a[i]-a[i-1]);maxGap=Math.max(maxGap,a[0]+Math.PI*2-a[a.length-1]);return Math.PI*2-maxGap}
 function canonicalAxis(a){a=norm(a);const k=Math.abs(a[0])>.01?0:Math.abs(a[1])>.01?1:2;return a[k]<0?mul(a,-1):a}
 function faceGroups(faces){const map=new Map();for(const f of faces||[]){const key=[f.componentId||'RAW',f.modelId||'',f.sourceStream||'',f.tessFaceId??''].join('|');let g=map.get(key);if(!g){g={key,componentId:f.componentId||null,modelId:f.modelId||null,instance:f.instance||null,sourceStream:f.sourceStream||'',tessFaceId:f.tessFaceId??null,triangles:[]};map.set(key,g)}g.triangles.push(f)}return[...map.values()]}
 function flattenGroup(g){const points=[],normals=[];let area=0;for(const t of g.triangles){const loop=t.loops?.[0]||[];if(loop.length<3)continue;area+=triArea(loop[0],loop[1],loop[2]);for(let i=0;i<3;i++){points.push(loop[i]);normals.push(norm(t.normals?.[i]||cross(sub(loop[1],loop[0]),sub(loop[2],loop[0]))))}}return{points,normals,area,bounds:boundsOf(points)}}
@@ -100,7 +100,7 @@ function groupHolePatterns(holes){
       if(fit&&fit.radius>.5&&fit.rms<Math.max(.45,fit.radius*.018)){pcd=fit.radius*2;center=add(mul(u,fit.cx),mul(v,fit.cy));rms=fit.rms}
     }
     const lengths=g.members.map(h=>h.length).sort((a,b)=>a-b),avgLength=lengths.reduce((s,x)=>s+x,0)/lengths.length;
-    patterns.push({id:`HP-${pi++}`,componentId:g.componentId,componentName:g.componentName,diameter:g.diameter,count:g.members.length,axis:g.axis,pcd,center,rms,avgLength,kind:pcd?'circular':'repeated',confidence:g.members.reduce((s,h)=>s+h.confidence,0)/g.members.length});
+    patterns.push({id:`HP-${pi++}`,componentId:g.componentId,componentName:g.componentName,diameter:g.diameter,count:g.members.length,axis:g.axis,pcd,center,rms,avgLength,kind:pcd?'circular':'repeated',members:g.members,confidence:g.members.reduce((s,h)=>s+h.confidence,0)/g.members.length});
   }
   return patterns.sort((a,b)=>(b.pcd?1:0)-(a.pcd?1:0)||b.count-a.count||a.diameter-b.diameter);
 }
@@ -167,7 +167,7 @@ export function recognizeTessellationGeometry(rec,{maxFeatures=500}={}){
   for(const c of cylinders){const id=c.componentId||'RAW',g=components.get(id)||{componentId:id,name:c.instance?.name||id,planes:0,cylinders:0,holes:0,outerCylinders:0};g.cylinders++;if(c.type==='hole')g.holes++;if(c.type==='outer')g.outerCylinders++;components.set(id,g)}
   const verification=markVerifiedGeometry(rec,planes,cylinders,holePatterns,planeSpacings);
   const all=[...planes,...cylinders],featureConfidence=all.length?all.reduce((s,x)=>s+x.confidence,0)/all.length:0;
-  return{version:'1.7.0',source:'FaceTessellations',heuristic:true,facesAnalyzed:groups.length,trianglesAnalyzed:faces.length,planes,cylinders,holes,outerCylinders,axes,holePatterns,coaxialGroups,planeSpacings,components:[...components.values()],verification,counts:{faceGroups:groups.length,planes:planes.length,cylinders:cylinders.length,holes:holes.length,outerCylinders:outerCylinders.length,axes:axes.length,holePatterns:holePatterns.length,coaxialGroups:coaxialGroups.length,planeSpacings:planeSpacings.length,verifiedPlanes:verification.counts.planes,verifiedCylinders:verification.counts.cylinders,verifiedHoles:verification.counts.holes,verifiedPatterns:verification.counts.holePatterns,verifiedPlaneSpacings:verification.counts.planeSpacings},confidence:featureConfidence,dominantAxis:axes[0]?.axis||null,note:'Drawing Intelligence v1.7.0: аналитические плоскости/цилиндры/отверстия подтверждаются по RMS, покрытию и согласованности нормалей. VERIFIED — аналитика поверх FaceTessellations; B-Rep Core v1.7.0 отдельно строит V/E/F/Shell topology, но exact Parasolid ещё не декодирован.'};
+  return{version:'2.3.0',source:'FaceTessellations',heuristic:true,facesAnalyzed:groups.length,trianglesAnalyzed:faces.length,planes,cylinders,holes,outerCylinders,axes,holePatterns,coaxialGroups,planeSpacings,components:[...components.values()],verification,counts:{faceGroups:groups.length,planes:planes.length,cylinders:cylinders.length,holes:holes.length,outerCylinders:outerCylinders.length,axes:axes.length,holePatterns:holePatterns.length,coaxialGroups:coaxialGroups.length,planeSpacings:planeSpacings.length,verifiedPlanes:verification.counts.planes,verifiedCylinders:verification.counts.cylinders,verifiedHoles:verification.counts.holes,verifiedPatterns:verification.counts.holePatterns,verifiedPlaneSpacings:verification.counts.planeSpacings},confidence:featureConfidence,dominantAxis:axes[0]?.axis||null,note:'Drawing Intelligence v2.3.0: аналитические плоскости/цилиндры/отверстия подтверждаются по RMS, покрытию и согласованности нормалей. VERIFIED — аналитика поверх FaceTessellations; B-Rep Core v1.7.0 отдельно строит V/E/F/Shell topology, но exact Parasolid ещё не декодирован.'};
 }
 export function recognitionDimensions(rec,recognition,{limit=24}={}){
   const out=[],seen=new Set();

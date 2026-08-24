@@ -10,8 +10,8 @@ import {buildFeatureGraph} from './core/feature-graph.js';
 import {parseSLDDRW} from './import/slddrw-adapter.js';
 import {renderFlatPattern} from './drawing/flat-pattern.js';
 
-const APP_VERSION='14.0.2';
-const BUILD_LABEL='PRODUCTION VIEW SYNTHESIZER';
+const APP_VERSION='14.3.0';
+const BUILD_LABEL='WORKER RENDER PIPELINE';
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const viewer=new WireframeViewer($('#viewerCanvas'));
 viewer.onSelect=(id,instance)=>{
@@ -29,6 +29,7 @@ const worker=new Worker(`./import-worker.js?v=${APP_VERSION}`,{type:'module'});
 let state={fileName:null,fileSize:0,rec:null,dimensions:[],types:[],parseMs:0,drawingMode:'production',selectedComponentId:null,selectedComponentName:'',importKind:null,slddrwSheetIndex:0};
 let drawingEditMode=false,drawingTool='edit';
 const drawingRenderCache=new Map();
+const drawingWorkerPending=new Map();
 const drawingEditor=new DrawingEditor($('#drawingSvg'),{onSelectionChange:updateEditorSelection,onStateChange:updateEditorState});
 const drawingNavigator=new DrawingNavigator($('#drawingView'),$('#drawingSvg'));
 
@@ -88,21 +89,47 @@ function transportReviver(key,value){
   if(value.$rozType==='Error'){const err=new Error(value.message||'Worker error');err.name=value.name||'Error';err.stack=value.stack||'';return err;}
   return value;
 }
+function showDrawingPreparing(){
+  const svg=$('#drawingSvg');if(!svg)return;
+  svg.setAttribute('viewBox','0 0 1684 1191');
+  svg.innerHTML=`<rect width="1684" height="1191" fill="${document.documentElement.dataset.theme==='dark'?'#0d1522':'#fff'}"/><g font-family="-apple-system,BlinkMacSystemFont,system-ui" text-anchor="middle"><text x="842" y="548" font-size="28" font-weight="700" fill="${document.documentElement.dataset.theme==='dark'?'#f4f7fb':'#17202b'}">Готовлю производственный чертёж…</text><text x="842" y="592" font-size="16" fill="#6e7781">Расчёт идёт в фоновом CAD worker. Интерфейс остаётся свободным.</text></g>`;
+}
+function requestWorkerDrawing(cacheKey,{mode=state.drawingMode,force=false}={}){
+  if(!state.rec||isSlddrw()||!state.fileName)return false;
+  if(!force&&drawingRenderCache.has(cacheKey))return true;
+  if(drawingWorkerPending.has(cacheKey))return true;
+  const requestId=`draw-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  drawingWorkerPending.set(cacheKey,requestId);
+  worker.postMessage({kind:'render-drawing',requestId,cacheKey,mode,theme:document.documentElement.dataset.theme||'light',projectName:$('#projectName')?.textContent||state.fileName.replace(/\.[^.]+$/,''),fileName:state.fileName});
+  return true;
+}
 worker.onmessage=e=>{
-  state.importKind='sldasm';setBusy(false);if(!e.data.ok){const where=e.data.stage?` [${e.data.stage}]`:'';log('Ошибка'+where+': '+e.data.error);console.error('SLDASM worker error',e.data);alert(`Ошибка импорта${where}: ${e.data.error}`);return}
-  let incoming=e.data;
-  if(e.data.transport==='json-buffer-v1'||e.data.transport==='json-v1'){
+  const msg=e.data||{};
+  if(msg.kind==='drawing-ready'){
+    const key=msg.cacheKey||'';if(key){drawingWorkerPending.delete(key);drawingRenderCache.set(key,{viewBox:msg.viewBox||'0 0 1684 1191',html:msg.html||'',renderMs:msg.renderMs||0});}
+    if(key&&key===drawingCacheKey()&&$('#drawingView')?.classList.contains('active-view')){const svg=$('#drawingSvg');svg.setAttribute('viewBox',msg.viewBox||'0 0 1684 1191');svg.innerHTML=msg.html||'';finalizeDrawingRender();scheduleDrawingFit();}
+    log(`Чертёж рассчитан в worker: ${Math.round(msg.renderMs||0)} мс${msg.qa?.score!=null?` · QA ${msg.qa.score}%`:''}.`);return;
+  }
+  if(msg.kind==='drawing-error'){
+    if(msg.cacheKey)drawingWorkerPending.delete(msg.cacheKey);console.error('Drawing worker error',msg);log(`Ошибка чертежа [${msg.stage||'worker'}]: ${msg.error}`);
+    if(msg.cacheKey===drawingCacheKey()&&$('#drawingView')?.classList.contains('active-view')){const svg=$('#drawingSvg');svg.setAttribute('viewBox','0 0 1200 760');svg.innerHTML=`<rect width="1200" height="760" fill="#fff"/><text x="600" y="370" text-anchor="middle" font-family="system-ui" font-size="20" fill="#9b1c1c">Ошибка фонового построения: ${String(msg.error||'unknown').replace(/[&<>]/g,'')}</text>`;}return;
+  }
+  state.importKind='sldasm';setBusy(false);if(!msg.ok){const where=msg.stage?` [${msg.stage}]`:'';log('Ошибка'+where+': '+msg.error);console.error('SLDASM worker error',msg);alert(`Ошибка импорта${where}: ${msg.error}`);return}
+  let incoming=msg;
+  if(msg.transport==='json-buffer-v2'||msg.transport==='json-buffer-v1'||msg.transport==='json-v1'){
     try{
-      const json=e.data.transport==='json-buffer-v1'?new TextDecoder().decode(e.data.payloadBuffer):e.data.payloadJson;
+      const json=msg.transport.startsWith('json-buffer')?new TextDecoder().decode(msg.payloadBuffer):msg.payloadJson;
       incoming={ok:true,...JSON.parse(json,transportReviver)};
     }catch(err){log('Ошибка [transport-parse]: '+(err?.message||err));console.error('SLDASM transport parse error',err);alert(`Ошибка импорта [transport-parse]: ${err?.message||err}`);return;}
   }
-  Object.assign(state,incoming);drawingRenderCache.clear();renderAll();
+  Object.assign(state,incoming);drawingRenderCache.clear();drawingWorkerPending.clear();renderAll();
   const n=state.rec.nativeAssembly;
   if(n?.root)$('#projectName').textContent=n.root;
   const geo=state.rec.geometryAvailable!==false;
-  const bc=state.rec.brep?.counts||{},bo=state.rec.brepOrientation?.counts||{};log(`SLDASM готов: ${n.componentCount} позиций · ${n.occurrenceCount} вхождений · ${n.faceBlocks||0} tess-блоков · ${n.triangles||0} треугольников. Oriented B-Rep: ${bc.vertices||0} V · ${bc.edges||0} E · ${bc.loops||0} L · ${bc.faces||0} F · ${bc.shells||0} shell · ${bo.loopReversals||0} loop reversals · ${bo.closedOutwardShells||0} closed oriented shell. Распознано: ${state.rec.recognition?.counts?.planes||0} плоскостей · ${state.rec.recognition?.counts?.cylinders||0} цилиндров · ${state.rec.recognition?.counts?.holes||0} отверстий. Интернет не использовался.`);
+  const bc=state.rec.brep?.counts||{},bo=state.rec.brepOrientation?.counts||{};log(`SLDASM готов: ${n.componentCount} позиций · ${n.occurrenceCount} вхождений · ${n.faceBlocks||0} tess-блоков · ${state.rec.counts.fullSceneTriangles||n.triangles||0} треугольников. UI LOD: ${state.rec.faces?.length||0}. Oriented B-Rep: ${bc.vertices||0} V · ${bc.edges||0} E · ${bc.loops||0} L · ${bc.faces||0} F · ${bc.shells||0} shell. Распознано: ${state.rec.recognition?.counts?.planes||0} плоскостей · ${state.rec.recognition?.counts?.cylinders||0} цилиндров · ${state.rec.recognition?.counts?.holes||0} отверстий.`);
   switchTab(geo?'model':'assembly');
+  // Warm the expensive assembly drawing in the worker only after the UI is responsive.
+  setTimeout(()=>{state.drawingMode='assemblyDetailed';updateDrawingModeAvailability();requestWorkerDrawing(drawingCacheKey(),{mode:'assemblyDetailed'});},0);
 };
 
 function setEmptyView(title,text){const root=$('#emptyView');root.querySelector('b').textContent=title;root.querySelector('span').textContent=text;root.style.display='grid'}
@@ -137,7 +164,7 @@ function renderAll(){
   const materialEl=$('#materialStatus');if(materialEl)materialEl.textContent=r.manufacturing?.materials?.documentMaterial||'—';
   const bc=r.brep?.counts||{};const bv=$('#brepVertexCount'),be=$('#brepEdgeCount'),bf=$('#brepFaceCount'),bs=$('#brepShellCount'),bclosed=$('#brepClosedCount'),bq=$('#brepCoverage');if(bv)bv.textContent=geo?(bc.vertices??0):'—';if(be)be.textContent=geo?(bc.edges??0):'—';if(bf)bf.textContent=geo?(bc.faces??0):'—';if(bs)bs.textContent=geo?(bc.shells??0):'—';if(bclosed)bclosed.textContent=geo&&r.brep?(Number.isFinite(bc.closedShells)?bc.closedShells:'LOD'):'—';if(bq)bq.textContent=geo&&r.brep?`${Math.round((r.brep.coverage||0)*100)}%${r.brep.topologyComplete?' FULL':' LOD'}`:'—';
   const conf=r.recognition?Math.round((r.recognition.confidence||0)*100):(d.length?Math.round(d.reduce((s,x)=>s+x.confidence,0)/d.length*100):0);const vr=r.recognition?.verification?.ratio;$('#confidence').textContent=geo?(Number.isFinite(vr)?`${Math.round(vr*100)}% VERIFIED`:(conf+'% TESS')):'META';
-  if(geo)$('#selectionInfo').textContent=r.brep?`B-Rep ${r.brep.counts?.edges||0}E · ${r.brep.counts?.loops||0}L · ${r.brep.counts?.shells||0} shell`:`Verified geometry · ${r.recognition?.counts?.verifiedCylinders||0} цилиндр. · ${r.recognition?.counts?.verifiedPlanes||0} плоск.`;renderTree();renderFeatures();renderDimensions();renderAssembly();updateDrawingModeAvailability();renderCurrentDrawing();$('#exportDrawingBtn').disabled=!r;
+  if(geo)$('#selectionInfo').textContent=r.brep?`B-Rep ${r.brep.counts?.edges||0}E · ${r.brep.counts?.loops||0}L · ${r.brep.counts?.shells||0} shell`:`Verified geometry · ${r.recognition?.counts?.verifiedCylinders||0} цилиндр. · ${r.recognition?.counts?.verifiedPlanes||0} плоск.`;renderTree();renderFeatures();renderDimensions();renderAssembly();updateDrawingModeAvailability();if($('#drawingView')?.classList.contains('active-view'))renderCurrentDrawing();$('#exportDrawingBtn').disabled=!r;
 }
 
 function drawingCacheKey(){
@@ -156,10 +183,8 @@ function renderCurrentDrawing(){
     svg.setAttribute('viewBox',cached.viewBox);svg.innerHTML=cached.html;finalizeDrawingRender();return;
   }
   if(state.drawingMode==='assemblyDetailed'){
-    const projectName=$('#projectName')?.textContent||state.fileName?.replace(/\.[^.]+$/,'')||n?.root||'SLDASM';
-    if(r.tessellation?.mode==='triangle-strips'&&r.recognition) renderAssemblyProductionSheet(svg,r,{projectName,fileName:state.fileName,theme:document.documentElement.dataset.theme,mode:'assemblyDetailed'});
-    else renderNativeAssemblyDrawing(svg,n,{projectName,fileName:state.fileName,theme:document.documentElement.dataset.theme});
-    finalizeCachedDrawing(cacheKey);return;
+    if(r.tessellation?.mode==='triangle-strips'&&r.recognition){requestWorkerDrawing(cacheKey,{mode:'assemblyDetailed'});showDrawingPreparing();return;}
+    const projectName=$('#projectName')?.textContent||state.fileName?.replace(/\.[^.]+$/,'')||n?.root||'SLDASM';renderNativeAssemblyDrawing(svg,n,{projectName,fileName:state.fileName,theme:document.documentElement.dataset.theme});finalizeCachedDrawing(cacheKey);return;
   }
   if(state.drawingMode==='flatPattern'){
     renderFlatPattern(svg,r,{componentId:state.selectedComponentId,componentName:state.selectedComponentName||'Выбранная деталь',fileName:selectedSourceFile(),theme:document.documentElement.dataset.theme});
@@ -175,7 +200,7 @@ function renderCurrentDrawing(){
     r.drawingProfile=profile.profile;
     r.drawingProfileConfidence=profile.confidence;
     // SLDASM drawing modes stay assembly-wide; only a non-assembly record may use the part sheet.
-    if(r.isAssembly||n)renderAssemblyProductionSheet(svg,r,{projectName,fileName:state.fileName,theme:document.documentElement.dataset.theme,mode:state.drawingMode});
+    if(r.isAssembly||n){requestWorkerDrawing(cacheKey,{mode:state.drawingMode});showDrawingPreparing();return;}
     else renderTessRecognitionDrawing(svg,r,{projectName,fileName:state.fileName,theme:document.documentElement.dataset.theme,mode:state.drawingMode});
     finalizeCachedDrawing(cacheKey);return;
   }
@@ -324,7 +349,7 @@ function renderDimensions(){
     $('#dimensionsTable').innerHTML=d.map(x=>{const sym=dimensionSymbol(x);return `<tr><td>${esc(x.type)}</td><td>${esc(sym||x.label)}</td><td>${fmt(x.value)} ${esc(x.unit||'mm')}</td><td>${Math.round((x.confidence||0)*100)}% · ${esc(x.source||'TESS')}</td></tr>`}).join('');
   }else{
     $('#dimensionCards').classList.add('empty');$('#dimensionCards').textContent='Встроенная геометрия не найдена — габариты недоступны.';
-    $('#dimensionsTable').innerHTML='<tr><td colspan="4">v14.0.2 строит Regression-Safe Production Fidelity Core поверх Parametric Face HLR, Drawing View Topology и Solid Regions поверх ориентированного Vertex → Edge → Loop → Face → Shell B-Rep, различает material / void по вложенности замкнутых Shell и использует эту семантику в разрезах. Native Parasolid region topology пока не декодируется.</td></tr>';
+    $('#dimensionsTable').innerHTML='<tr><td colspan="4">v14.3.0 строит Regression-Safe Production Fidelity Core поверх Parametric Face HLR, Drawing View Topology и Solid Regions поверх ориентированного Vertex → Edge → Loop → Face → Shell B-Rep, различает material / void по вложенности замкнутых Shell и использует эту семантику в разрезах. Native Parasolid region topology пока не декодируется.</td></tr>';
   }
 }
 
@@ -347,7 +372,7 @@ function renderAssembly(){
     const id=c.instances?.[0]||'',bt=id?selectionTopology(id):null,attrs=id?`data-component-id="${esc(id)}" data-component-name="${esc(c.name)}" class="bom-component selectable-component" title="Выбрать компонент в 3D"`:'';
     const mf=id?componentManufacturing(id):{},mfg=mf.sheet?` · лист S=${fmt(mf.sheet.thickness,2)} · ${mf.sheet.bendCount||0} гиб.`:mf.classInfo?` · ${mf.classInfo.class}`:'';return `<div>${i+1}</div><div ${attrs}><b>${esc(c.name)}</b><small>${esc(c.file)} · ${c.type==='assembly'?'подсборка':'деталь'}${bt?` · B-Rep ${esc(bt.faces)}F / ${esc(bt.shells)} shell${c.type==='assembly'?` · ${esc(bt.parts)} дочерн. дет.`:''}`:''}${esc(mfg)}</small></div><div>${c.count}</div>`;
   }).join('');
-  root.innerHTML=`<div class="assembly-head"><div><h3>${esc(n.root)} · SLDASM</h3><p class="hint">Feature Recognition Core v14.0 · REGRESSION-SAFE DRAWING FIDELITY B-REP · ${esc(n.container)} · полностью локально</p></div><span class="adapter-badge">SLDASM</span></div><div class="assembly-grid"><section><h4>Дерево компонентов</h4><ul class="component-tree"><li><b>▾ ${esc(n.root)}</b><ul>${treeRows}</ul></li></ul></section><section><h4>BOM · ${components.length} позиций</h4><div class="bom bom-wide"><div class="head">№</div><div class="head">Компонент</div><div class="head">Кол-во</div>${bomRows}</div><p class="hint bom-hint">Нажмите на позицию BOM — деталь или вся подсборка выделится и впишется в 3D.</p></section></div><div class="assembly-actions"><button data-open-assembly-drawing>Открыть производственный сборочный чертёж</button><button data-open-part-drawing ${state.selectedComponentId?'':'disabled'}>Чертёж выбранного компонента</button><button data-open-flat-pattern ${selectedSheetMetalFeature()?'':'disabled'}>Развёртка листовой детали</button></div><div class="native-note"><b>v14.0.2:</b> Regression-Safe Production Fidelity Core строит видимые/силуэтные/формообразующие рёбра из ориентированной Face/Edge топологии до HLR; Exact Section Boolean Core строит union/subtract material regions в секущей плоскости поверх Solid Region B-Rep; Orientation Core согласует Face/Loop, а Inside-Outside Core определяет заполненность замкнутых Shell перед Section/HLR.  выбранная SLDASM-подсборка рекурсивно собирается из дочерних SLDPRT и возвращается в собственную систему координат. <b>3D:</b> ${geo?`собрано из FaceTessellations с матрицами вхождений (${esc(n.mappedOccurrences||0)} размещено / ${esc(n.triangles||0)} треугольников сцены).`:'встроенная тесселяция в файле не найдена.'} Feature Recognition Core распознаёт отверстия, фаски/скругления-кандидаты и листовой металл; Welded Assembly Geometry Core восстанавливает тонкие рёбра/лопасти и кандидаты сварных контактов; HSR убирает внутренние детали с главного вида; Feature Graph распознаёт осевые детали и крестовины; профиль DRUM_REFERENCE_A2 строит модельные виды B/A/C, A–A/B–B/D, размерные цепи, развёрнутую спецификацию и штамп с массой. Surface Intersection Geometry Core строит пересечения plane–plane, plane–cylinder, cylinder–cylinder, plane–cone и coaxial cylinder–cone; конические поверхности восстанавливаются из меридионального профиля FaceTessellations. Torus-ветка включается только при подтверждённом круговом меридиональном fit; Surface-Derived Drawing Core использует их до HLR и подавляет соответствующие tessellation-рёбра. Exact Parasolid B-Rep пока не декодируется; происхождение геометрии остаётся VERIFIED TESS/analytic reconstruction.</div>`;
+  root.innerHTML=`<div class="assembly-head"><div><h3>${esc(n.root)} · SLDASM</h3><p class="hint">Feature Recognition Core v14.0 · REGRESSION-SAFE DRAWING FIDELITY B-REP · ${esc(n.container)} · полностью локально</p></div><span class="adapter-badge">SLDASM</span></div><div class="assembly-grid"><section><h4>Дерево компонентов</h4><ul class="component-tree"><li><b>▾ ${esc(n.root)}</b><ul>${treeRows}</ul></li></ul></section><section><h4>BOM · ${components.length} позиций</h4><div class="bom bom-wide"><div class="head">№</div><div class="head">Компонент</div><div class="head">Кол-во</div>${bomRows}</div><p class="hint bom-hint">Нажмите на позицию BOM — деталь или вся подсборка выделится и впишется в 3D.</p></section></div><div class="assembly-actions"><button data-open-assembly-drawing>Открыть производственный сборочный чертёж</button><button data-open-part-drawing ${state.selectedComponentId?'':'disabled'}>Чертёж выбранного компонента</button><button data-open-flat-pattern ${selectedSheetMetalFeature()?'':'disabled'}>Развёртка листовой детали</button></div><div class="native-note"><b>v14.3.0:</b> Regression-Safe Production Fidelity Core строит видимые/силуэтные/формообразующие рёбра из ориентированной Face/Edge топологии до HLR; Exact Section Boolean Core строит union/subtract material regions в секущей плоскости поверх Solid Region B-Rep; Orientation Core согласует Face/Loop, а Inside-Outside Core определяет заполненность замкнутых Shell перед Section/HLR.  выбранная SLDASM-подсборка рекурсивно собирается из дочерних SLDPRT и возвращается в собственную систему координат. <b>3D:</b> ${geo?`собрано из FaceTessellations с матрицами вхождений (${esc(n.mappedOccurrences||0)} размещено / ${esc(n.triangles||0)} треугольников сцены).`:'встроенная тесселяция в файле не найдена.'} Feature Recognition Core распознаёт отверстия, фаски/скругления-кандидаты и листовой металл; Welded Assembly Geometry Core восстанавливает тонкие рёбра/лопасти и кандидаты сварных контактов; HSR убирает внутренние детали с главного вида; Feature Graph распознаёт осевые детали и крестовины; профиль DRUM_REFERENCE_A2 строит модельные виды B/A/C, A–A/B–B/D, размерные цепи, развёрнутую спецификацию и штамп с массой. Surface Intersection Geometry Core строит пересечения plane–plane, plane–cylinder, cylinder–cylinder, plane–cone и coaxial cylinder–cone; конические поверхности восстанавливаются из меридионального профиля FaceTessellations. Torus-ветка включается только при подтверждённом круговом меридиональном fit; Surface-Derived Drawing Core использует их до HLR и подавляет соответствующие tessellation-рёбра. Exact Parasolid B-Rep пока не декодируется; происхождение геометрии остаётся VERIFIED TESS/analytic reconstruction.</div>`;
 }
 
 
@@ -381,7 +406,7 @@ $('#addEditorWeld')?.addEventListener('click',()=>drawingEditor.addWeld('Сва�
 $('#resetDrawingEdits')?.addEventListener('click',()=>{if(confirm('Сбросить все ручные правки текущего чертежа?'))drawingEditor.resetAll()});
 
 $('#exportBtn').addEventListener('click',()=>{if(!state.rec)return;const ref=isSlddrw()?slddrwRef():null;const report=ref?{version:APP_VERSION,generated:new Date().toISOString(),file:state.fileName,format:'SLDDRW',projectName:ref.projectName,container:ref.container,solidworksFormat:ref.version,streamCount:ref.streamCount,sheetNames:ref.sheetNames,sheets:ref.sheets,dimensions:ref.dimensions,notes:ref.notes,views:ref.views,references:ref.references,properties:ref.properties,warnings:ref.warnings}:{version:APP_VERSION,generated:new Date().toISOString(),file:state.fileName,drawingMode:state.drawingMode,counts:state.rec.counts,bounds:state.rec.bounds,dimensions:state.dimensions,boltPatterns:state.rec.boltPatterns,products:state.rec.products,occurrences:state.rec.occurrences,nativeAssembly:state.rec.nativeAssembly||null,brep:state.rec.brep||null,recognition:state.rec.recognition||null,manufacturing:state.rec.manufacturing||null};const blob=new Blob([JSON.stringify(report,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(state.fileName||'model').replace(/\.[^.]+$/,'')+'-engineering-report.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)});
-$('#exportDrawingBtn').addEventListener('click',()=>{if(!state.rec)return;renderCurrentDrawing();const svg=serializeDrawing($('#drawingSvg'));const blob=new Blob([svg],{type:'image/svg+xml;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(state.fileName||'model').replace(/\.[^.]+$/,'')+'-drawing-'+state.drawingMode+'.svg';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);log('Чертёж экспортирован в SVG локально.');});
+$('#exportDrawingBtn').addEventListener('click',()=>{if(!state.rec)return;const key=drawingCacheKey();if(!drawingRenderCache.has(key)&&!isSlddrw()){requestWorkerDrawing(key,{mode:state.drawingMode});showDrawingPreparing();alert('Чертёж ещё рассчитывается в фоне. Повторите экспорт после завершения расчёта.');return;}renderCurrentDrawing();const svg=serializeDrawing($('#drawingSvg'));const blob=new Blob([svg],{type:'image/svg+xml;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(state.fileName||'model').replace(/\.[^.]+$/,'')+'-drawing-'+state.drawingMode+'.svg';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);log('Чертёж экспортирован в SVG локально.');});
 function esc(x){return String(x??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 initTheme();
 if('serviceWorker'in navigator)navigator.serviceWorker.register(`./sw.js?v=${APP_VERSION}`,{updateViaCache:'none'}).then(reg=>{reg.update().catch(()=>{});log(`Service Worker v${APP_VERSION} активен: приложение готово к офлайн-кэшу.`)}).catch(e=>log('Service Worker: '+e.message));

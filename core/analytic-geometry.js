@@ -309,6 +309,22 @@ function helicalFeatureCurves(rec,boundaries,{samplesPerTurn=96}={}){
 }
 
 
+
+// Production-safe helical boundaries reconstructed from actual tessellated CAD face edges.
+// Unlike a generic helicoid surface silhouette, these runs preserve the source edge t-range/radius
+// and therefore do not invent full-height sinusoidal loops in orthographic production views.
+export function productionHelicalFeatureEdges(rec,{samplesPerTurn=96}={}){
+  const A=reconstructAnalyticGeometry(rec);
+  const featureBundle=featureViewCurves(rec,{arcSegments:80,viewDir:[0,0,1]});
+  const features=featureBundle.features;
+  const surfaceEdges=reconstructSurfaceEdgePrimitives(rec);
+  const rawBoundaries=cadFaceBoundaries(rec,A.planes,{circleSegments:120}).filter(c=>!features.filletFaceKeys.has(c.faceKey)).filter(c=>{
+    const keys=c.sourceEdgeKeys||[];return !keys.length||!keys.every(k=>surfaceEdges.sourceEdgeKeys.has(k));
+  });
+  const boundaries=rawBoundaries.filter(c=>{const keys=c.faceKeys||c.source?.faceKeys||[];return keys.length<2||surfaceBoundaryDecision(rec,keys).draw!==false});
+  return helicalFeatureCurves(rec,boundaries,{samplesPerTurn});
+}
+
 function sphereSurfaceSilhouettes(rec,viewDir,{segments=128}={}){
   const M=reconstructSurfaceModel(rec),d=norm(viewDir),out=[];let surfaces=0;for(const s of M.surfaces.values())if(s.type==='sphere-inferred'&&s.params?.center&&s.params?.radius>0){surfaces++;const c=s.params.center,r=s.params.radius,seed=Math.abs(d[2])<.82?[0,0,1]:[1,0,0],u=norm(cross(d,seed)),v=norm(cross(d,u)),pts=[];for(let i=0;i<=segments;i++){const t=i/segments*Math.PI*2;pts.push(add(c,add(mul(u,Math.cos(t)*r),mul(v,Math.sin(t)*r))))}out.push({kind:'circle',role:'sphere-silhouette',silhouette:true,points:pts,componentId:s.componentId,faceKey:s.faceKey,sourceSurface:{faceKey:s.faceKey,type:'sphere-inferred'}})}return{curves:out,count:out.length,surfaces};
 }

@@ -1,4 +1,4 @@
-// ROZFOOD Engineering Studio v14.0.2 — Annotation Layout Core
+// ROZFOOD Engineering Studio v14.3.0 — Annotation Layout Core
 // Collision-aware deterministic annotation placement for dimensions, leaders and notes.
 const overlap=(a,b,p=0)=>!(a.x+a.w+p<=b.x||b.x+b.w+p<=a.x||a.y+a.h+p<=b.y||b.y+b.h+p<=a.y);
 export function createAnnotationLayout(seed=[]){
@@ -14,5 +14,5 @@ export function createAnnotationLayout(seed=[]){
     for(const p of candidates){const b={x:p.x,y:p.y,w,h};if(free(b)){reserve(b,id);return b}}
     const b={x:preferred.x,y:preferred.y,w,h};reserve(b,id);return b;
   };
-  return {version:'14.0.2',kernel:'ROZFOOD Annotation Layout Core',occupied,reserve,free,place};
+  return {version:'14.3.0',kernel:'ROZFOOD Annotation Layout Core',occupied,reserve,free,place};
 }

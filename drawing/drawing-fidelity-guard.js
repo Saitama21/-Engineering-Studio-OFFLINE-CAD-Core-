@@ -1,4 +1,4 @@
-// ROZFOOD Engineering Studio v14.0.2 — Drawing Fidelity & Regression Guard Core
+// ROZFOOD Engineering Studio v14.3.0 — Drawing Fidelity & Regression Guard Core
 // Deterministic guardrail layer. It never invents geometry: it validates the already reconstructed
 // CAD/B-Rep result, freezes important drawing invariants and exposes a measurable fidelity score.
 
@@ -10,7 +10,7 @@ const round=(x,n=3)=>finite(x)?Number(x.toFixed(n)):null;
 
 function geometrySignature(rec){
   const b=rec?.bounds||{}, size=b.size||[0,0,0];
-  const topo=rec?.topologicalBrep||rec?.brepTopology||rec?.topology||{};
+  const topo=rec?.brep||rec?.topologicalBRep||rec?.topologicalBrep||rec?.brepTopology||rec?.topology||{};
   const surface=rec?.surfaceModel||rec?.surfaceReconstruction||{};
   const recg=rec?.recognition||{};
   return {
@@ -19,10 +19,10 @@ function geometrySignature(rec){
     components:new Set((rec?.faces||[]).map(f=>f.componentId||'RAW')).size,
     cylinders:(recg.outerCylinders||recg.cylinders||[]).length,
     holes:(recg.holes||[]).length,
-    topoV:topo.vertices?.length??topo.stats?.vertices??null,
-    topoE:topo.edges?.length??topo.stats?.edges??null,
-    topoF:topo.faces?.length??topo.stats?.faces??null,
-    shells:topo.shells?.length??topo.stats?.shells??null,
+    topoV:topo.vertices?.length??topo.counts?.vertices??topo.stats?.vertices??null,
+    topoE:topo.edges?.length??topo.counts?.edges??topo.stats?.edges??null,
+    topoF:topo.faces?.length??topo.counts?.faces??topo.stats?.faces??null,
+    shells:topo.shells?.length??topo.counts?.shells??topo.stats?.shells??null,
     surfaces:surface.faces?.size??surface.surfaces?.size??surface.stats?.surfaces??null
   };
 }
@@ -83,7 +83,7 @@ export function createDrawingFidelityGuard(rec,{composition=null,functionalPlan=
   score=clamp(score,0,100);
   const hardPass=layout.collisions===0&&layout.outside===0&&semantics.ratio>=.66&&sectionHealthy;
   return {
-    version:'14.0.2',kernel:'ROZFOOD Drawing Fidelity & Regression Guard Core',profile,
+    version:'14.3.0',kernel:'ROZFOOD Drawing Fidelity & Regression Guard Core',profile,
     geometry,layout,annotations,semantics,section:{ratio:round(sectionRatio,4),healthy:sectionHealthy,considered:sectionContext?.considered||0,kept:sectionContext?.kept||0},
     score:round(score,1),hardPass,
     note:'Regression guard validates geometry signature, protected layout, annotation collisions, functional dimension coverage and section-context density. It does not modify source CAD geometry.'

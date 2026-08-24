@@ -1,4 +1,4 @@
-// ROZFOOD Engineering Studio v14.0.2 — Reference-Grade Production Drafting Core
+// ROZFOOD Engineering Studio v14.3.0 — Reference-Grade Production Drafting Core
 // High-level drafting synthesis for production assembly sheets. It consumes reconstructed
 // engineering semantics (B-Rep, helicoids, section plan, functional dimensions) and emits
 // stable drawing primitives. No pixel tracing / no AI / no hard-coded source-file geometry.
@@ -34,7 +34,7 @@ export function buildProductionDraftingGraph(rec,plan,composition,sectionPlan,fu
   constraints.push({kind:'section-source',a:'end',b:'section-bb',label:'B-B'});
   constraints.push({kind:'detail-source',a:'main-longitudinal',b:'detail-d',label:'D'});
   const pitch=(functionalPlan?.manufacturing||[]).find(x=>x.role==='helical-pitch')?.value||null;
-  return {version:'14.0.2',kernel:'ROZFOOD Production Drafting Graph Core',profile:'DRUM_REFERENCE_A2',entities,constraints,semantics:{axis:plan?.axis||null,overallLength:plan?.L||null,outerDiameter:plan?.outerDiameter||plan?.D||null,pitch,stations:plan?.chain?.stations||[],sectionA:sectionPlan?.A?.deg??null,sectionB:sectionPlan?.B?.station??null},counts:{views:boxEntries.length,dimensions:entities.filter(x=>x.kind==='dimension').length,constraints:constraints.length}};
+  return {version:'14.3.0',kernel:'ROZFOOD Production Drafting Graph Core',profile:'DRUM_REFERENCE_A2',entities,constraints,semantics:{axis:plan?.axis||null,overallLength:plan?.L||null,outerDiameter:plan?.outerDiameter||plan?.D||null,pitch,stations:plan?.chain?.stations||[],sectionA:sectionPlan?.A?.deg??null,sectionB:sectionPlan?.B?.station??null},counts:{views:boxEntries.length,dimensions:entities.filter(x=>x.kind==='dimension').length,constraints:constraints.length}};
 }
 
 // Exact helicoid centre/boundary curves for the production side view. They replace the old
@@ -86,5 +86,5 @@ export function renderProductionDetailD(plan,box){
 }
 
 export function referenceGradeStats(graph,helix,aa,detail){
-  return {version:'14.0.2',kernel:'ROZFOOD Reference-Grade Production Drafting Core',views:graph?.counts?.views||0,dimensions:graph?.counts?.dimensions||0,constraints:graph?.counts?.constraints||0,helicoidCurves:helix?.stats?.curves||0,aaStations:aa?.stats?.stations||0,detailD:detail?.stats||null};
+  return {version:'14.3.0',kernel:'ROZFOOD Reference-Grade Production Drafting Core',views:graph?.counts?.views||0,dimensions:graph?.counts?.dimensions||0,constraints:graph?.counts?.constraints||0,helicoidCurves:helix?.stats?.curves||0,aaStations:aa?.stats?.stations||0,detailD:detail?.stats||null};
 }

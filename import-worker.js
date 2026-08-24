@@ -5,143 +5,111 @@ import {reconstructTopologicalBRep} from './core/topological-brep-reconstruction
 import {orientTopologicalBRep} from './core/brep-orientation-core.js';
 import {reconstructSolidRegions} from './core/solid-region-core.js';
 import {recognizeManufacturingFeatures,manufacturingDimensions} from './core/manufacturing-recognition.js';
+import {renderAssemblyProductionSheet} from './drawing/assembly-production-sheet-v130.js';
 
-const MAX_TRANSFER_FACES=80000;
-const MIN_FACES_PER_COMPONENT=64;
+// v14.1: the worker owns the full-fidelity CAD record for the whole session.
+// The UI receives only a display LOD + metadata; production drawings are rendered here.
+const MAX_TRANSFER_FACES=5000;
+const MIN_FACES_PER_COMPONENT=36;
+const MAX_TRANSFER_EDGES=4000;
+let sessionRec=null;
+let sessionFileName='';
 
 function liteFace(f){
   return{loops:f?.loops||[],componentId:f?.componentId||'',componentName:f?.instance?.name||f?.componentName||'',tessFaceId:Number.isFinite(f?.tessFaceId)?f.tessFaceId:null,sourceStream:f?.sourceStream||''};
 }
-
-function compactFacesForTransfer(rec){
-  const src=rec?.faces||[];
-  const full=src.length;
-  if(!full){rec.counts.displayTriangles=0;return;}
-
-  // Even medium assemblies benefit from removing duplicated normals/source metadata
-  // before WebKit structured-clone. For large assemblies we additionally keep a
-  // deterministic per-component LOD while preserving exact bounds/recognition.
-  if(full<=MAX_TRANSFER_FACES){
-    rec.faces=src.map(liteFace);
-    rec.counts.displayTriangles=rec.faces.length;
-    rec.counts.fullSceneTriangles=full;
-    rec.transfer={mode:'full-lite',fullTriangles:full,displayTriangles:rec.faces.length};
-    return;
-  }
-
-  const counts=new Map();
-  for(const f of src){const id=f?.componentId||'RAW';counts.set(id,(counts.get(id)||0)+1);}
-  const targets=new Map();let baseSum=0,excessTotal=0;
-  for(const [id,count] of counts){const base=Math.min(count,MIN_FACES_PER_COMPONENT);targets.set(id,base);baseSum+=base;excessTotal+=Math.max(0,count-base);}
-  let remaining=Math.max(0,MAX_TRANSFER_FACES-baseSum);
-  if(remaining>0&&excessTotal>0){
-    for(const [id,count] of counts){const base=targets.get(id)||0,excess=Math.max(0,count-base);targets.set(id,Math.min(count,base+Math.floor(remaining*excess/excessTotal)));}
-  }
-  let targetSum=0;for(const v of targets.values())targetSum+=v;
-  // Spend rounding remainder on the largest groups without ever exceeding count.
-  if(targetSum<MAX_TRANSFER_FACES){
-    const order=[...counts.entries()].sort((a,b)=>b[1]-a[1]);let need=MAX_TRANSFER_FACES-targetSum,oi=0;
-    while(need>0&&order.length){const [id,count]=order[oi%order.length],t=targets.get(id)||0;if(t<count){targets.set(id,t+1);need--;}oi++;if(oi>order.length*MAX_TRANSFER_FACES)break;}
-  }
-
-  const seen=new Map(),emitted=new Map(),out=[];
-  for(const f of src){
-    const id=f?.componentId||'RAW',count=counts.get(id)||1,target=targets.get(id)||0;
-    const n=(seen.get(id)||0)+1;seen.set(id,n);
-    const before=Math.floor((n-1)*target/count),after=Math.floor(n*target/count);
-    if(after>before){out.push(liteFace(f));emitted.set(id,(emitted.get(id)||0)+1);}
-  }
-  rec.faces=out;
-  rec.counts.fullSceneTriangles=full;
-  rec.counts.displayTriangles=out.length;
-  rec.transfer={mode:'large-assembly-lod',fullTriangles:full,displayTriangles:out.length,componentCount:counts.size,maxTransferFaces:MAX_TRANSFER_FACES};
-  if(rec.nativeAssembly){rec.nativeAssembly.transferMode=rec.transfer.mode;rec.nativeAssembly.displayTriangles=out.length;rec.nativeAssembly.fullSceneTriangles=full;}
+function sampledByComponent(src,maxTotal,minPerComp,mapper=x=>x){
+  if(!Array.isArray(src)||src.length<=maxTotal)return (src||[]).map(mapper);
+  const counts=new Map();for(const x of src){const id=x?.componentId||'RAW';counts.set(id,(counts.get(id)||0)+1)}
+  const targets=new Map();let base=0,excess=0;
+  for(const [id,count] of counts){const b=Math.min(count,minPerComp);targets.set(id,b);base+=b;excess+=Math.max(0,count-b)}
+  const remaining=Math.max(0,maxTotal-base);
+  if(remaining&&excess)for(const [id,count] of counts){const b=targets.get(id)||0;targets.set(id,Math.min(count,b+Math.floor(remaining*Math.max(0,count-b)/excess)))}
+  let used=[...targets.values()].reduce((a,b)=>a+b,0);if(used<maxTotal){for(const [id,count] of [...counts.entries()].sort((a,b)=>b[1]-a[1])){if(used>=maxTotal)break;const t=targets.get(id)||0,add=Math.min(count-t,maxTotal-used);targets.set(id,t+add);used+=add}}
+  const seen=new Map(),out=[];for(const x of src){const id=x?.componentId||'RAW',count=counts.get(id)||1,target=targets.get(id)||0,n=(seen.get(id)||0)+1;seen.set(id,n);if(Math.floor(n*target/count)>Math.floor((n-1)*target/count))out.push(mapper(x))}
+  return out;
 }
-
-function slimForTransfer(rec,dimensions){
-  const R=rec?.recognition;
-  if(R){
-    for(const listName of ['planes','cylinders','holes','outerCylinders']){
-      for(const x of R[listName]||[]){if(x.instance){x.componentName=x.instance.name||'';delete x.instance;}}
-    }
-  }
-  compactFacesForTransfer(rec);
-  return (dimensions||[]).map(d=>{const o={...d};delete o.feature;return o;});
+function stripInstance(x){if(!x||typeof x!=='object')return x;const o={...x};if(o.instance){o.componentName=o.instance.name||o.componentName||'';delete o.instance}return o}
+function transferRecord(rec){
+  const recognition=rec.recognition?{...rec.recognition}:null;
+  if(recognition)for(const k of ['planes','cylinders','holes','outerCylinders'])recognition[k]=(rec.recognition[k]||[]).map(stripInstance);
+  const faces=sampledByComponent(rec.faces||[],MAX_TRANSFER_FACES,MIN_FACES_PER_COMPONENT,liteFace);
+  const edges=sampledByComponent(rec.edges||[],MAX_TRANSFER_EDGES,18,e=>({kind:e.kind,points:e.points||[],p1:e.p1,p2:e.p2,componentId:e.componentId||'',faceKeys:e.faceKeys||[]}));
+  const brep=rec.brep?{counts:rec.brep.counts,components:rec.brep.components,coverage:rec.brep.coverage,topologyComplete:rec.brep.topologyComplete,diagnostics:rec.brep.diagnostics}:null;
+  const out={...rec,faces,edges,recognition,brep,
+    brepOrientation:rec.brepOrientation?{counts:rec.brepOrientation.counts}:null,
+    solidRegions:rec.solidRegions?{counts:rec.solidRegions.counts}:null,
+    surfaceTrims:undefined,analyticGeometry:undefined,surfaceModel:undefined,parametricHelicoids:undefined,
+    adaptiveParametricPatches:undefined,analyticFaceHLR:undefined,topologicalBRep:undefined,topologyHealing:undefined,brepHealed:undefined,productionViewSynthesis:undefined,
+    productionDraftingGraph:undefined,drawingComposition:undefined,sectionContext:undefined};
+  out.counts={...(rec.counts||{}),displayTriangles:faces.length,fullSceneTriangles:rec.faces?.length||0,displayEdges:edges.length};
+  out.transfer={mode:'ui-lod-v14.1',fullTriangles:rec.faces?.length||0,displayTriangles:faces.length,fullEdges:rec.edges?.length||0,displayEdges:edges.length};
+  if(out.nativeAssembly)out.nativeAssembly={...out.nativeAssembly,transferMode:out.transfer.mode,displayTriangles:faces.length,fullSceneTriangles:rec.faces?.length||0};
+  return out;
+}
+function transportReplacer(key,value){
+  if(typeof value==='function'||typeof value==='symbol')return undefined;
+  if(typeof value==='bigint')return {$rozType:'BigInt',value:String(value)};
+  if(value instanceof Map)return {$rozType:'Map',entries:[...value.entries()]};
+  if(value instanceof Set)return {$rozType:'Set',values:[...value.values()]};
+  if(value instanceof Error)return {$rozType:'Error',name:value.name,message:value.message,stack:value.stack||''};
+  return value;
+}
+function sendPayload(payload){
+  const json=JSON.stringify(payload,transportReplacer);if(!json)throw new Error('Transport serialization produced an empty payload.');
+  const bytes=new TextEncoder().encode(json);self.postMessage({ok:true,transport:'json-buffer-v2',payloadBuffer:bytes.buffer,transportBytes:bytes.byteLength},[bytes.buffer]);
+}
+function svgMock(){const attrs=new Map();return{attrs,setAttribute(k,v){attrs.set(k,String(v))},innerHTML:''}}
+function renderWorkerDrawing(req){
+  if(!sessionRec)throw new Error('Full CAD session is not ready. Re-import SLDASM.');
+  const svg=svgMock(),t0=performance.now();
+  renderAssemblyProductionSheet(svg,sessionRec,{projectName:req.projectName||sessionRec.nativeAssembly?.root||'SLDASM',fileName:req.fileName||sessionFileName,theme:req.theme||'light',mode:req.mode||'assemblyDetailed'});
+  const renderMs=performance.now()-t0,viewBox=svg.attrs.get('viewBox')||'0 0 1684 1191';
+  self.postMessage({ok:true,kind:'drawing-ready',requestId:req.requestId||'',cacheKey:req.cacheKey||'',mode:req.mode||'assemblyDetailed',theme:req.theme||'light',viewBox,html:svg.innerHTML,renderMs,qa:sessionRec.productionDrawingQA||null,fidelity:sessionRec.drawingFidelity||null});
 }
 
 self.onmessage=async e=>{
   let stage='start';
   try{
-    const {kind,buffer,fileName}=e.data;
+    const data=e.data||{};
+    if(data.kind==='render-drawing'){
+      stage='worker-drawing-render';renderWorkerDrawing(data);return;
+    }
+    const {kind,buffer,fileName}=data;
     if(kind!=='sldasm')throw new Error('Этот Import Core принимает только .SLDASM.');
-    const t0=performance.now();
-    stage='parse-sldasm';
+    const t0=performance.now();stage='parse-sldasm';
     const rec=await parseSLDASM(buffer,fileName);
     stage='tess-recognition';
     if(rec.geometryAvailable){
       rec.recognition=recognizeTessellationGeometry(rec,{maxFeatures:1200});
-      rec.counts.planes=rec.recognition.counts.planes;
-      rec.counts.cylinders=rec.recognition.counts.cylinders;
-      rec.counts.holes=rec.recognition.counts.holes;
-      rec.counts.recognizedAxes=rec.recognition.counts.axes;
-      rec.counts.verifiedPlanes=rec.recognition.counts.verifiedPlanes||0;
-      rec.counts.verifiedCylinders=rec.recognition.counts.verifiedCylinders||0;
-      rec.counts.verifiedHoles=rec.recognition.counts.verifiedHoles||0;
+      Object.assign(rec.counts,{planes:rec.recognition.counts.planes,cylinders:rec.recognition.counts.cylinders,holes:rec.recognition.counts.holes,recognizedAxes:rec.recognition.counts.axes,verifiedPlanes:rec.recognition.counts.verifiedPlanes||0,verifiedCylinders:rec.recognition.counts.verifiedCylinders||0,verifiedHoles:rec.recognition.counts.verifiedHoles||0});
     }
     stage='feature-recognition-v2';
     if(rec.geometryAvailable){
-      rec.manufacturing=recognizeManufacturingFeatures(rec);
-      const mc=rec.manufacturing.counts||{};
-      rec.counts.featureHoles=mc.holes||0;rec.counts.chamfers=mc.chamfers||0;rec.counts.fillets=mc.fillets||0;rec.counts.threadCandidates=mc.threads||0;rec.counts.sheetMetal=mc.sheetMetal||0;rec.counts.bends=mc.bends||0;
+      rec.manufacturing=recognizeManufacturingFeatures(rec);const mc=rec.manufacturing.counts||{};
+      Object.assign(rec.counts,{featureHoles:mc.holes||0,chamfers:mc.chamfers||0,fillets:mc.fillets||0,threadCandidates:mc.threads||0,sheetMetal:mc.sheetMetal||0,bends:mc.bends||0});
     }
     stage='dimensions';
     let dimensions=rec.geometryAvailable?[...recognitionDimensions(rec,rec.recognition,{limit:36}),...manufacturingDimensions(rec.manufacturing,{limit:36})]:[];
+    dimensions=(dimensions||[]).map(d=>{const o={...d};delete o.feature;return o});
     const types=rec.recognition?['plane','cylinder','hole','axis','brep-topology','chamfer','fillet','thread-candidate','sheet-metal','bend']:[];
-    stage='prepare-transfer';
-    dimensions=slimForTransfer(rec,dimensions);
-    stage='topological-brep-core-v5.0';
+
+    // Build exact topology on the full record BEFORE creating the UI LOD.
+    stage='topological-brep-core-v14.1';
     if(rec.geometryAvailable){
       const faceted=buildFacetedBRep(rec,{maxDisplayEdges:42000,sharpAngleDeg:28});
       rec.brep=reconstructTopologicalBRep(rec,{maxDisplayEdges:42000});
-      rec.brepOrientation=orientTopologicalBRep(rec);
-      rec.solidRegions=reconstructSolidRegions(rec);
+      rec.brepOrientation=orientTopologicalBRep(rec);rec.solidRegions=reconstructSolidRegions(rec);
       rec.edges=rec.brep.displayEdges?.length?rec.brep.displayEdges:(faceted.displayEdges||[]);
-      delete rec.brep.displayEdges;
       const bc=rec.brep.counts||{};
-      rec.counts.brepOrientedFaces=rec.brepOrientation?.counts?.faces||0;rec.counts.brepLoopReversals=rec.brepOrientation?.counts?.loopReversals||0;rec.counts.brepOrientationConflicts=rec.brepOrientation?.counts?.orientationConflicts||0;
-      rec.counts.solidRegions=rec.solidRegions?.counts?.regions||0;rec.counts.materialRegions=rec.solidRegions?.counts?.materialRegions||0;rec.counts.voidRegions=rec.solidRegions?.counts?.voidRegions||0;
-      rec.counts.brepVertices=bc.vertices||0;rec.counts.brepEdges=bc.edges||0;rec.counts.brepFaces=bc.faces||0;rec.counts.brepShells=bc.shells||0;rec.counts.brepClosedShells=bc.closedShells;
-      rec.counts.vertices=bc.vertices||rec.counts.vertices;rec.counts.edges=bc.edges||0;rec.counts.shells=bc.shells||0;if(Number.isFinite(bc.closedShells))rec.counts.solids=bc.closedShells;
+      Object.assign(rec.counts,{brepOrientedFaces:rec.brepOrientation?.counts?.faces||0,brepLoopReversals:rec.brepOrientation?.counts?.loopReversals||0,brepOrientationConflicts:rec.brepOrientation?.counts?.orientationConflicts||0,solidRegions:rec.solidRegions?.counts?.regions||0,materialRegions:rec.solidRegions?.counts?.materialRegions||0,voidRegions:rec.solidRegions?.counts?.voidRegions||0,brepVertices:bc.vertices||0,brepEdges:bc.edges||0,brepFaces:bc.faces||0,brepShells:bc.shells||0,brepClosedShells:bc.closedShells,vertices:bc.vertices||rec.counts.vertices,edges:bc.edges||0,shells:bc.shells||0});
+      if(Number.isFinite(bc.closedShells))rec.counts.solids=bc.closedShells;
     }
-    // Worker-only executable caches must never cross the worker boundary.
-    delete rec.surfaceTrims;
+    sessionRec=rec;sessionFileName=fileName||'';
 
-    // Safari/WebKit can reject very large/nested structured-clone graphs even when
-    // every individual value is cloneable.  v14.0.2 therefore uses a JSON string as
-    // the transport envelope. postMessage only has to clone one string, while Maps
-    // and Sets are explicitly tagged and restored by app.js.  This also guarantees
-    // that no Function/Symbol can escape from a future reconstruction cache.
-    stage='serialize-transfer';
-    const transportReplacer=(key,value)=>{
-      if(typeof value==='function'||typeof value==='symbol')return undefined;
-      if(typeof value==='bigint')return {$rozType:'BigInt',value:String(value)};
-      if(value instanceof Map)return {$rozType:'Map',entries:[...value.entries()]};
-      if(value instanceof Set)return {$rozType:'Set',values:[...value.values()]};
-      if(value instanceof Error)return {$rozType:'Error',name:value.name,message:value.message,stack:value.stack||''};
-      return value;
-    };
-    const payload={rec,dimensions,types,parseMs:performance.now()-t0,importKind:'sldasm'};
-    let payloadJson;
-    try{payloadJson=JSON.stringify(payload,transportReplacer);}
-    catch(serialErr){throw new Error('Transport serialization failed: '+String(serialErr?.message||serialErr));}
-    if(!payloadJson||payloadJson.length<16)throw new Error('Transport serialization produced an empty payload.');
-    stage='encode-transfer';
-    const payloadBytes=new TextEncoder().encode(payloadJson);
-    const payloadBuffer=payloadBytes.buffer;
-    stage='post-message-buffer';
-    self.postMessage({ok:true,transport:'json-buffer-v1',payloadBuffer},[payloadBuffer]);
+    stage='prepare-ui-lod';const uiRec=transferRecord(rec);
+    stage='serialize-transfer';sendPayload({rec:uiRec,dimensions,types,parseMs:performance.now()-t0,importKind:'sldasm'});
   }catch(err){
-    const message=String(err?.message||err);
-    try{self.postMessage({ok:false,error:message,stage,stack:String(err?.stack||'').slice(0,3000)});}catch{}
+    const message=String(err?.message||err);try{self.postMessage({ok:false,kind:e.data?.kind==='render-drawing'?'drawing-error':'import-error',requestId:e.data?.requestId||'',cacheKey:e.data?.cacheKey||'',error:message,stage,stack:String(err?.stack||'').slice(0,3000)});}catch{}
   }
 };

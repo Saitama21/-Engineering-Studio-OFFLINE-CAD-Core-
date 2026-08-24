@@ -1,4 +1,4 @@
-// ROZFOOD Engineering Studio v14.0.1 — Production View Synthesizer
+// ROZFOOD Engineering Studio v14.0.2 — Production View Synthesizer
 // Rebuilds the principal orthographic production views from recognized assembly semantics
 // (axis, cylindrical envelopes, stations, cross-feature graph and helicoids) instead of
 // re-projecting the full tessellated assembly. Mesh/B-Rep renderers remain fallbacks only.
@@ -72,6 +72,6 @@ export function buildProductionViewSynthesis(rec,plan,composition,{crossGraph=nu
   const main=synthesizeLongitudinalView(rec,plan,composition.boxes.main,{includeHelicoids:true,showInternal:true});
   const end=synthesizeEndView(rec,plan,composition.boxes.end,crossGraph,{section:false});
   const bb=synthesizeEndView(rec,plan,composition.boxes.bb,crossGraph,{section:true});
-  const stats={version:'14.0.1',kernel:'ROZFOOD Production View Synthesizer',views:4,meshFallbacks:0,longitudinalStations:main.stats.stations,helicoidCurves:main.stats.helicoidCurves,endDiameters:end.stats.diameters,endRods:end.stats.rods,endHoles:end.stats.holes};
-  return{version:'14.0.1',top,main,end,bb,stats};
+  const stats={version:'14.0.2',kernel:'ROZFOOD Production View Synthesizer',views:4,meshFallbacks:0,longitudinalStations:main.stats.stations,helicoidCurves:main.stats.helicoidCurves,endDiameters:end.stats.diameters,endRods:end.stats.rods,endHoles:end.stats.holes};
+  return{version:'14.0.2',top,main,end,bb,stats};
 }

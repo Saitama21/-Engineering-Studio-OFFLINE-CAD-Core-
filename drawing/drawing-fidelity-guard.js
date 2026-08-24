@@ -1,4 +1,4 @@
-// ROZFOOD Engineering Studio v14.0.1 — Drawing Fidelity & Regression Guard Core
+// ROZFOOD Engineering Studio v14.0.2 — Drawing Fidelity & Regression Guard Core
 // Deterministic guardrail layer. It never invents geometry: it validates the already reconstructed
 // CAD/B-Rep result, freezes important drawing invariants and exposes a measurable fidelity score.
 
@@ -83,7 +83,7 @@ export function createDrawingFidelityGuard(rec,{composition=null,functionalPlan=
   score=clamp(score,0,100);
   const hardPass=layout.collisions===0&&layout.outside===0&&semantics.ratio>=.66&&sectionHealthy;
   return {
-    version:'14.0.1',kernel:'ROZFOOD Drawing Fidelity & Regression Guard Core',profile,
+    version:'14.0.2',kernel:'ROZFOOD Drawing Fidelity & Regression Guard Core',profile,
     geometry,layout,annotations,semantics,section:{ratio:round(sectionRatio,4),healthy:sectionHealthy,considered:sectionContext?.considered||0,kept:sectionContext?.kept||0},
     score:round(score,1),hardPass,
     note:'Regression guard validates geometry signature, protected layout, annotation collisions, functional dimension coverage and section-context density. It does not modify source CAD geometry.'

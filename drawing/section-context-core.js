@@ -1,4 +1,4 @@
-// ROZFOOD Engineering Studio v14.0.1 — Section Context Core
+// ROZFOOD Engineering Studio v14.0.2 — Section Context Core
 // Builds the visible geometry immediately behind a cutting plane. This gives production sections
 // the required contextual edges without dumping the whole assembly wireframe into the section.
 
@@ -17,6 +17,6 @@ export function sectionContextRecord(rec,planePoint,planeNormal,{depth=70,frontT
     faces.push(f);kept++;
   }
   const out={...rec,faces};
-  out.sectionContext={version:'14.0.1',kernel:'ROZFOOD Section Context Core',considered,kept,depth};
+  out.sectionContext={version:'14.0.2',kernel:'ROZFOOD Section Context Core',considered,kept,depth};
   return out;
 }

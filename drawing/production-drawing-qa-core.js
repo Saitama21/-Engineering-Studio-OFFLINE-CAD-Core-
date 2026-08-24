@@ -1,4 +1,4 @@
-// ROZFOOD Engineering Studio v14.0.1 — Production Drawing QA Core
+// ROZFOOD Engineering Studio v14.0.2 — Production Drawing QA Core
 // Structural production QA beyond the v12 regression guard: validates view grammar, drawing
 // semantics and reconstruction coverage. It reports; it never alters CAD geometry.
 
@@ -22,5 +22,5 @@ export function runProductionDrawingQA(rec,{draftingGraph=null,fidelity=null,ref
     stableDetail:!!referenceGrade?.detailD
   };
   const passed=Object.values(checks).filter(Boolean).length,total=Object.keys(checks).length,score=Math.round(passed/total*1000)/10;
-  return {version:'14.0.1',kernel:'ROZFOOD Production Drawing QA Core',checks,passed,total,score,hardPass:passed===total,viewCoverage,referenceGrade,geometryFrozen:true,note:'Structural QA: required production views, topology, helicoid reconstruction, semantic dimensions and regression guard. No source CAD mutation.'};
+  return {version:'14.0.2',kernel:'ROZFOOD Production Drawing QA Core',checks,passed,total,score,hardPass:passed===total,viewCoverage,referenceGrade,geometryFrozen:true,note:'Structural QA: required production views, topology, helicoid reconstruction, semantic dimensions and regression guard. No source CAD mutation.'};
 }

@@ -113,13 +113,33 @@ self.onmessage=async e=>{
       rec.counts.brepVertices=bc.vertices||0;rec.counts.brepEdges=bc.edges||0;rec.counts.brepFaces=bc.faces||0;rec.counts.brepShells=bc.shells||0;rec.counts.brepClosedShells=bc.closedShells;
       rec.counts.vertices=bc.vertices||rec.counts.vertices;rec.counts.edges=bc.edges||0;rec.counts.shells=bc.shells||0;if(Number.isFinite(bc.closedShells))rec.counts.solids=bc.closedShells;
     }
-    // Surface trimming keeps executable UV mapper functions in its internal cache.
-    // They are required only while reconstructing B-Rep inside this worker and are
-    // not valid Structured Clone values for worker -> UI postMessage (Safari/WebKit
-    // throws "The object can not be cloned"). Never transfer worker-only caches.
+    // Worker-only executable caches must never cross the worker boundary.
     delete rec.surfaceTrims;
-    stage='post-message';
-    self.postMessage({ok:true,rec,dimensions,types,parseMs:performance.now()-t0,importKind:'sldasm'});
+
+    // Safari/WebKit can reject very large/nested structured-clone graphs even when
+    // every individual value is cloneable.  v14.0.2 therefore uses a JSON string as
+    // the transport envelope. postMessage only has to clone one string, while Maps
+    // and Sets are explicitly tagged and restored by app.js.  This also guarantees
+    // that no Function/Symbol can escape from a future reconstruction cache.
+    stage='serialize-transfer';
+    const transportReplacer=(key,value)=>{
+      if(typeof value==='function'||typeof value==='symbol')return undefined;
+      if(typeof value==='bigint')return {$rozType:'BigInt',value:String(value)};
+      if(value instanceof Map)return {$rozType:'Map',entries:[...value.entries()]};
+      if(value instanceof Set)return {$rozType:'Set',values:[...value.values()]};
+      if(value instanceof Error)return {$rozType:'Error',name:value.name,message:value.message,stack:value.stack||''};
+      return value;
+    };
+    const payload={rec,dimensions,types,parseMs:performance.now()-t0,importKind:'sldasm'};
+    let payloadJson;
+    try{payloadJson=JSON.stringify(payload,transportReplacer);}
+    catch(serialErr){throw new Error('Transport serialization failed: '+String(serialErr?.message||serialErr));}
+    if(!payloadJson||payloadJson.length<16)throw new Error('Transport serialization produced an empty payload.');
+    stage='encode-transfer';
+    const payloadBytes=new TextEncoder().encode(payloadJson);
+    const payloadBuffer=payloadBytes.buffer;
+    stage='post-message-buffer';
+    self.postMessage({ok:true,transport:'json-buffer-v1',payloadBuffer},[payloadBuffer]);
   }catch(err){
     const message=String(err?.message||err);
     try{self.postMessage({ok:false,error:message,stage,stack:String(err?.stack||'').slice(0,3000)});}catch{}
